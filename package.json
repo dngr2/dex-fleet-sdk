@@ -1,0 +1,41 @@
+{
+  "name": "@fleet/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Tree-shakeable TypeScript client for the DEX fleet rails (quote/pay/escrow/streams/x402). Pure calldata builders + viem.",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./modules": {
+      "types": "./dist/modules/index.d.ts",
+      "import": "./dist/modules/index.js"
+    },
+    "./abi": {
+      "types": "./dist/abi.d.ts",
+      "import": "./dist/abi.js"
+    },
+    "./addresses.json": "./addresses.json"
+  },
+  "files": ["dist", "addresses.json", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
+    "typecheck:examples": "tsc -p tsconfig.examples.json --noEmit",
+    "test": "vitest run",
+    "example": "tsx examples/pay.ts"
+  },
+  "peerDependencies": {
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "viem": "^2.21.0",
+    "vitest": "^2.1.0",
+    "tsx": "^4.19.0"
+  }
+}

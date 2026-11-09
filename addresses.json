@@ -1,0 +1,32 @@
+{
+  "$comment": "Fleet contract addresses, copied from source docs (never retyped — GOTCHA #73). Sources: products/revenue/cells.json, products/*/KEY-RECORD*.md, products/p2-forwarder/KEY-RECORD.md. EIP-55 checksums re-verified via `cast to-check-sum-address` 2026-11-09. `kind` marks EXPOSED contracts; the rails interface reads these live.",
+  "base": {
+    "chainId": 8453,
+    "native": "0x0000000000000000000000000000000000000000",
+    "paymentRail": "0xe9515881fe6976eD9CB55328B8308F6eF7c311a8",
+    "requestRegistry": "0x9651cD591cFe33E1b684e5d8541940e78724c749",
+    "swapRouter": "0xEB28D5cA0783D01dd2E4bF86AD7024ca156aB047",
+    "streamRail": "0x2bB5b763a8A85e446909674177e65cb6F1052b4F",
+    "escrowRail": "0x80793a7d35f735bc76BeAf22B1f413926818f410",
+    "receiptNft": "0x6d140b934a06410a8C36eEe926c967467ab6d46f",
+    "feeRecipient": "0xe218E382F28A094f9f64E903ee3cb1750A7f204B",
+    "source": "products/revenue/cells.json; products/p2-forwarder/KEY-RECORD.md; products/g2a-streams/KEY-RECORD.md; products/g2b-escrow/MAINNET-LIVE.md; products/g4b-receipts/EVIDENCE-mainnet-deploy.md"
+  },
+  "optimism": {
+    "chainId": 10,
+    "native": "0x0000000000000000000000000000000000000000",
+    "paymentRail": "0xe9515881fe6976eD9CB55328B8308F6eF7c311a8",
+    "swapRouter": "0x9651cD591cFe33E1b684e5d8541940e78724c749",
+    "streamRail": "0x61AB1942a6779D392922cfcd20BA6D7dc36FDe15",
+    "feeRecipient": "0xe218E382F28A094f9f64E903ee3cb1750A7f204B",
+    "source": "products/revenue/cells.json (p3-router row); products/revenue/FEE-RAISE-PLAN.md §8b (g2a-OP 0x61AB1942…). NOTE requestRegistry/f1a is Base-only."
+  },
+  "arbitrum": {
+    "chainId": 42161,
+    "native": "0x0000000000000000000000000000000000000000",
+    "paymentRail": "0xe9515881fe6976eD9CB55328B8308F6eF7c311a8",
+    "swapRouter": "0x9651cD591cFe33E1b684e5d8541940e78724c749",
+    "feeRecipient": "0xe218E382F28A094f9f64E903ee3cb1750A7f204B",
+    "source": "products/revenue/cells.json"
+  }
+}

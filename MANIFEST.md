@@ -22,6 +22,7 @@ f4d481efe4872b57f706e7e1ee4edec8  examples/sweep.ts
 50db9953697225249d097f1e228f27e7  examples/verify402.ts
 9edc87ded300aee8678d84c6c4592c8b  package.json
 c9c1eb8a2383e7c0797374f67aa53116  README.md
+7321021a1fed386c1b34c43491af4798  SDK-ADDRESSBOOK-2026-11-11.md
 80f12d436efe97865b6dab0bb5837356  src/abi.ts
 17e0fa19eb25aefff54aeb1241cb0409  src/addressBook.ts
 d3f117dc6c16d2b8693ae06b2b1ad6f4  src/buildCallData.ts

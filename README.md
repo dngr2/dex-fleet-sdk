@@ -1,14 +1,52 @@
-<!-- published as dngr2/dex-fleet-sdk — a copy of products/sdk from the dex fleet monorepo -->
-
 # @fleet/sdk
 
-> **Source-only — nothing here is deployed.** This SDK talks to the **LIVE Base mainnet** contracts;
-> the addresses it targets are in `addresses.json` (read + EIP-55 checked at runtime). No build step is
-> required to read it: `src/` is the source, `dist/` is the compiled output of the same tree.
-> See the FROZEN-vs-LIVE section below before wiring `quote()`.
+**Pay a stranger safely, and charge a stranger on a schedule — self-custodial, no account, no
+intermediary.** That is the capability; the fee is the footnote. This is the tree-shakeable
+TypeScript client for the DEX fleet rails: pure calldata builders + a thin viem seam. No state at
+import time; `addresses.json` is data you pass in.
 
-Tree-shakeable TypeScript client for the DEX fleet rails — pure calldata builders + a thin viem
-seam. No state at import time; `addresses.json` is data you pass in.
+Two things a 1% checkout processor cannot do, in five lines each — both snippets below are
+**runnable** (`tsx examples/<name>.ts`) and issue **real live `eth_call`s**, not pseudocode:
+
+1. **`examples/payStranger.ts` — pay a stranger safely.** Lock funds against a condition; the
+   counterparty releases with the preimage; **you get an automatic refund if they never do** (the
+   escrow opens `refund()` at `timeout`). The funds sit in the escrow contract — the processor never
+   holds keys.
+2. **`examples/recurringLink.ts` — charge a stranger a recurring $N.** Arm one standing mandate;
+   after that **anyone may fire the next due lap with no further signature from you**, and the money
+   sits in a per-stream vault you alone can revoke. No subscription server, no card on file.
+
+```ts
+// pay a stranger safely — hero; full file: examples/payStranger.ts
+const factory = book.book.base!.v2!.escrowRail!;                 // live v2 EscrowFactory (Base)
+const feeBps  = await client.readContract({ address: factory, abi: escrowFactoryLiveAbi, functionName: "feeBps" });
+const deal    = { counterparty: stranger, arbiter: ZERO, token: USDC_BASE,
+                  amount: 25_000_000n, hash: keccak256(preimage), timeout: in1h() } as const;
+const { to, data } = b.createEscrowLive({ factory, ...deal });   // send this, value 0
+// prove it lands: factory.predict(payer, deal) — another live eth_call
+```
+
+```ts
+// charge a stranger a recurring $N — full file: examples/recurringLink.ts
+const factory = book.book.base!.v2!.streamRail!;                 // live v2 StreamFactory (Base)
+const feeBps  = await client.readContract({ address: factory, abi: streamFactoryLiveAbi, functionName: "feeBps" });
+const { to, data } = b.setMandateLive({ factory, recipient: ME, token: USDC_BASE,
+                                        ticket: 1_550_000n, period: 2_592_000n, laps: 12, t0: now() });
+```
+
+### The fee, in one honest line
+
+At the current **500 bps** we are **5–12× a ~1% crypto processor *above ~$14 per transfer*** — and
+roughly at parity or below a mainstream card processor's all-in cut for larger tickets. So: for a
+plain link under ~$14 the fee is the story; **for the two capabilities above (safe stranger-pay,
+standing mandate) the fee is barely the story at all** — nothing else self-custodial does both.
+
+> **One-word caveat on "the factory".** A `StreamFactory` *vault* stores an immutable `factory()`
+> that it reads for its rate — a vault lives for years and must keep reading *one* factory. So when
+> prose here says "the factory", read it as **"a factory of this lineage"**; the current one is
+> **v2.1**. Older vaults keep pointing at the factory they were born under; that pointer never moves.
+
+## Layout
 
 ```
 src/
@@ -106,6 +144,24 @@ npm run example    # tsx examples/pay.ts
 ## Addresses
 
 `addresses.json` values are copied from source docs/genesis receipts (GOTCHA #73) and EIP-55
-re-verified with `cast to-check-sum-address`. `addressBook()` checksums each on read and throws on
-a malformed entry. Multi-chain: the same CREATE address recurs on Base/OP/Arbitrum for `paymentRail`
-and `swapRouter`; `requestRegistry` (f1-a links) and `escrowRail`/`streamRail` are per-chain.
+re-verified with `cast to-check-sum-address`. `addressBook()` validates EIP-55 strictly on read
+(`isAddress(addr,{strict:true})`) and, for a mixed-case input, requires `getAddress(addr) === addr`
+so a *corrupted* checksum is caught, not silently normalised — plus a malformed entry throws.
+
+**Multi-chain, with one honest seam.** `paymentRail` (p2) is the same CREATE address on all 10
+chains — a CREATE address is `keccak(rlp(key,nonce))[12:]`, chain-independent. `swapRouter` (p3)
+likewise recurs on 9 chains, but on **Base it is a DIFFERENT contract** at `0xEB28D5cA…`; and the
+bare string `0x9651cD59…` is the Base f1a `requestRegistry` (2772 B) *and* the p3 Router on the other
+9 chains (4270 B) — same string, different code **per chain**. Never key on a bare address without
+its chain.
+
+`requestRegistry` (f1-a), `receiptNft` (g4b), `escrowRail`/`streamRail` on Base, and the five Base
+supporting contracts (`settlementRegistry`, `fleetExecutor`, `x402Facilitator`, `fleetPaymaster`,
+`tollRegistry`) are Base-only or per-chain as listed. The nested **`v2`** block is the next-gen line
+and is **Base-only (chainId 8453)** — the other 9 chains stay on the v1 addresses at each chain's top
+level. A reader must **not** assume v2 is multi-chain.
+
+> **v2-only builders revert on a v1 address.** A v2 surface pointed at a v1 addr (or a chain where
+> the rail was never deployed) reverts. Guard with `supports(client, {to, abi, fn})` — an
+> `eth_getCode` + selector-presence check, cached per client — or call `assertSupports`, which throws
+> `NotDeployed` carrying `{to, selector}` before any broadcast.

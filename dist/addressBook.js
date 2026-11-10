@@ -6,7 +6,7 @@
  * address from a file + checksum/length, never retype). `resolve()` checksums via viem and
  * throws on a malformed entry rather than passing a bad address downstream.
  */
-import { getAddress } from "viem";
+import { getAddress, isAddress } from "viem";
 import { SdkError } from "./types.js";
 /** The rails live on these chains (a subset of ChainKey); others resolve per-entry. */
 export const SUPPORTED_CHAINS = ["base", "optimism", "arbitrum"];
@@ -19,29 +19,56 @@ export function parseAddressBook(raw) {
             continue;
         if (typeof rails !== "object" || rails === null)
             throw new SdkError(`addresses.json: chain "${chain}" is not an object`);
-        const out = {};
-        for (const [key, val] of Object.entries(rails)) {
-            if (typeof val !== "string")
-                continue;
-            // `source` is a free-text citation; `native`/`chainId`-adjacent are real addresses. Only a
-            // 0x-40hex string is checksummed; anything else is carried through as-is.
-            out[key] = /^0x[0-9a-fA-F]{40}$/.test(val) ? checksum(val, `${chain}.${key}`) : val;
-        }
-        book[chain] = out;
+        book[chain] = parseRails(rails, chain);
     }
     return book;
 }
-/** Checksum-check an address string; throw (with context) on a bad one. */
+/** Parse one chain's rail set. A nested `v2` object is recursed (the Base-only v2 line). */
+function parseRails(rails, chain) {
+    const out = {};
+    for (const [key, val] of Object.entries(rails)) {
+        if (key === "v2" && typeof val === "object" && val !== null) {
+            out.v2 = parseRails(val, `${chain}.v2`);
+            continue;
+        }
+        if (typeof val !== "string")
+            continue;
+        // `source` is free text; `native`/`chainId`-adjacent are not keys we keep here. Only a 0x-40hex
+        // string is checksummed AND EIP-55-verified; anything else is carried through as-is.
+        out[key] = /^0x[0-9a-fA-F]{40}$/.test(val)
+            ? checksum(val, `${chain}.${key}`)
+            : val;
+    }
+    return out;
+}
+/**
+ * Checksum-check an address string; throw (with context) on a bad one.
+ *
+ * WHY the two extra steps: viem's `getAddress` NORMALISES any-case input (it lowercases then
+ * re-checksums), so a mistyped MIXED-case address round-trips silently — `getAddress("0xAbC…")`
+ * never throws and the "EIP-55 check" proves nothing. We:
+ *   1. require a well-formed 20-byte hex string,
+ *   2. run `isAddress(x, { strict: true })` (viem's own strict gate),
+ *   3. if the input is MIXED-case, require `getAddress(x) === x` — i.e. the input ALREADY carries a
+ *      valid checksum. All-lower / all-upper input is accepted (no checksum to contradict).
+ */
 export function checksum(addr, where = "address") {
     if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) {
         throw new SdkError(`${where}: "${addr}" is not a 20-byte hex address (len ${addr.length})`);
     }
-    try {
-        return getAddress(addr);
+    if (!isAddress(addr, { strict: true })) {
+        throw new SdkError(`${where}: "${addr}" fails EIP-55 checksum`);
     }
-    catch (e) {
-        throw new SdkError(`${where}: "${addr}" fails EIP-55 checksum`, e);
+    const hasUpper = /[A-F]/.test(addr.slice(2));
+    const hasLower = /[a-f]/.test(addr.slice(2));
+    if (hasUpper && hasLower) {
+        const canonical = getAddress(addr);
+        if (canonical !== addr) {
+            throw new SdkError(`${where}: "${addr}" has a CORRUPTED EIP-55 checksum — canonical is ${canonical}`);
+        }
+        return canonical;
     }
+    return getAddress(addr);
 }
 /**
  * Build a reader over a parsed book. Import the JSON with your bundler

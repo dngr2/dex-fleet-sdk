@@ -11,7 +11,7 @@
  * decodes; test/buildCallData.test.ts pins each selector so a drift fails the build, not the chain.
  */
 import { encodeFunctionData } from "viem";
-import { paymentRailAbi, escrowRailAbi, escrowAbi, streamRailAbi, streamFactoryLiveAbi, requestRegistryAbi, swapRouterAbi, sweepAbi, x402FacilitatorAbi, settlementRegistryAbi, fleetExecutorAbi, } from "./abi.js";
+import { paymentRailAbi, escrowRailAbi, escrowAbi, escrowFactoryLiveAbi, streamRailAbi, streamFactoryLiveAbi, requestRegistryAbi, swapRouterAbi, sweepAbi, x402FacilitatorAbi, settlementRegistryAbi, fleetExecutorAbi, } from "./abi.js";
 function build(abi, fn, a) {
     const data = encodeFunctionData({
         abi,
@@ -69,6 +69,30 @@ export function sweepExcess(a) {
 /** The 8-field Deal as a positional tuple, in struct order (all static → flat head). */
 function toDealTuple(d) {
     return [d.counterparty, d.arbiter, d.token, d.amount, d.hash, d.timeout, d.releaseGrace, d.hook];
+}
+/** The 6-field LIVE Deal (no referrer/grace/hook) as a positional tuple. */
+function toLiveDealTuple(d) {
+    return [d.counterparty, d.arbiter, d.token, d.amount, d.hash, d.timeout];
+}
+/**
+ * LIVE g2b EscrowFactory.create(counterparty, token, amount, hash, timeout) — the published verb
+ * (selector 0xa083c5e1, in llms.txt). Use THIS against the live factory: the frozen 8-field
+ * `createFor` selector (0xd9b22c47) is ABSENT from the live runtime.
+ */
+export function createEscrowLive(a) {
+    return build(escrowFactoryLiveAbi, "create", {
+        to: a.factory,
+        args: [a.counterparty, a.token, a.amount, a.hash, a.timeout],
+        ...(a.value !== undefined ? { value: a.value } : {}),
+    });
+}
+/** LIVE g2b EscrowFactory.createFor(6-field Deal) — escrow with a named arbiter, no referrer. */
+export function createEscrowLiveFor(a) {
+    return build(escrowFactoryLiveAbi, "createFor", {
+        to: a.factory,
+        args: [toLiveDealTuple(a.deal)],
+        ...(a.value !== undefined ? { value: a.value } : {}),
+    });
 }
 // ---------------------------------------------------------------------------- payment links
 /** RequestRegistry.request(destination, token, amount, memo) — mints a deposit address. */
@@ -173,6 +197,14 @@ export function settlementRecord(a) {
 /** SettlementRegistry.paid(paymentId) — read call: (amount, at). */
 export function settlementPaid(a) {
     return build(settlementRegistryAbi, "paid", { to: a.registry, args: [a.paymentId] });
+}
+/**
+ * SettlementRegistry.markPaid(paymentId, amount) — writer-gated record. NB the DIFFERENT arity from
+ * x402Facilitator.markPaid(…,to,token,amount): 0x39747824 vs 0x7dffcf3b. Building the wrong one
+ * against a registry/facilitator address decodes garbage — hence a distinct builder + a pinned test.
+ */
+export function markPaidRegistry(a) {
+    return build(settlementRegistryAbi, "markPaid", { to: a.registry, args: [a.paymentId, a.amount] });
 }
 // ---------------------------------------------------------------------------- batch (FleetExecutor)
 /** FleetExecutor.execute(calls, nonce, deadline, sig) — EIP-712 signed batch. */

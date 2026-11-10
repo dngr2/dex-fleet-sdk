@@ -353,6 +353,47 @@ export declare const escrowFactoryLiveAbi: readonly [{
         readonly name: "escrow";
         readonly type: "address";
     }];
+}, {
+    readonly type: "function";
+    readonly name: "predict";
+    readonly stateMutability: "view";
+    readonly inputs: readonly [{
+        readonly name: "payer";
+        readonly type: "address";
+    }, {
+        readonly name: "d";
+        readonly type: "tuple";
+        readonly components: readonly [{
+            readonly name: "counterparty";
+            readonly type: "address";
+        }, {
+            readonly name: "arbiter";
+            readonly type: "address";
+        }, {
+            readonly name: "token";
+            readonly type: "address";
+        }, {
+            readonly name: "amount";
+            readonly type: "uint256";
+        }, {
+            readonly name: "hash";
+            readonly type: "bytes32";
+        }, {
+            readonly name: "timeout";
+            readonly type: "uint64";
+        }];
+    }];
+    readonly outputs: readonly [{
+        readonly type: "address";
+    }];
+}, {
+    readonly type: "function";
+    readonly name: "feeBps";
+    readonly stateMutability: "view";
+    readonly inputs: readonly [];
+    readonly outputs: readonly [{
+        readonly type: "uint16";
+    }];
 }];
 /** IStreamRail — products/rails/src/IStreamRail.sol (frozen), signed-mandate portal. */
 export declare const streamRailAbi: readonly [{
@@ -495,8 +536,29 @@ export declare const streamRailAbi: readonly [{
         readonly indexed: false;
     }];
 }];
-/** Live g2a StreamFactory — setMandate(recipient,token,ticket,period,laps,t0) + createStreamFor. */
+/**
+ * Live g2a StreamFactory — setMandate(recipient,token,ticket,period,laps,t0) + createStreamFor,
+ * plus the live reads a recurring-link snippet needs: `feeBps()`, `minFee()`, `predict(...)` and the
+ * public `mandate(payer,recipient,token)` getter. All four selectors were runtime-scanned PRESENT on
+ * the live v2 streamRail 0x8f26d7a5… (Base, 2026-11-10) and the views eth_call-read live.
+ */
 export declare const streamFactoryLiveAbi: readonly [{
+    readonly type: "function";
+    readonly name: "feeBps";
+    readonly stateMutability: "view";
+    readonly inputs: readonly [];
+    readonly outputs: readonly [{
+        readonly type: "uint16";
+    }];
+}, {
+    readonly type: "function";
+    readonly name: "minFee";
+    readonly stateMutability: "view";
+    readonly inputs: readonly [];
+    readonly outputs: readonly [{
+        readonly type: "uint256";
+    }];
+}, {
     readonly type: "function";
     readonly name: "setMandate";
     readonly stateMutability: "nonpayable";
@@ -545,6 +607,68 @@ export declare const streamFactoryLiveAbi: readonly [{
     }];
     readonly outputs: readonly [{
         readonly type: "address";
+    }];
+}, {
+    readonly type: "function";
+    readonly name: "predict";
+    readonly stateMutability: "view";
+    readonly inputs: readonly [{
+        readonly name: "payer";
+        readonly type: "address";
+    }, {
+        readonly name: "recipient";
+        readonly type: "address";
+    }, {
+        readonly name: "token";
+        readonly type: "address";
+    }, {
+        readonly name: "amount";
+        readonly type: "uint256";
+    }, {
+        readonly name: "start";
+        readonly type: "uint64";
+    }, {
+        readonly name: "end";
+        readonly type: "uint64";
+    }];
+    readonly outputs: readonly [{
+        readonly type: "address";
+    }];
+}, {
+    readonly type: "function";
+    readonly name: "mandate";
+    readonly stateMutability: "view";
+    readonly inputs: readonly [{
+        readonly name: "";
+        readonly type: "address";
+    }, {
+        readonly name: "";
+        readonly type: "address";
+    }, {
+        readonly name: "";
+        readonly type: "address";
+    }];
+    readonly outputs: readonly [{
+        readonly name: "token";
+        readonly type: "address";
+    }, {
+        readonly name: "ticket";
+        readonly type: "uint256";
+    }, {
+        readonly name: "period";
+        readonly type: "uint64";
+    }, {
+        readonly name: "lastEnd";
+        readonly type: "uint64";
+    }, {
+        readonly name: "laps";
+        readonly type: "uint32";
+    }, {
+        readonly name: "fired";
+        readonly type: "uint32";
+    }, {
+        readonly name: "active";
+        readonly type: "bool";
     }];
 }, {
     readonly type: "event";
@@ -871,7 +995,7 @@ export declare const x402FacilitatorAbi: readonly [{
     }];
     readonly outputs: readonly [];
 }];
-/** SettlementRegistry (lane 10) — ISettlementRegistry.sol, read side. */
+/** SettlementRegistry (lane 10) — ISettlementRegistry.sol, read side + its OWN writer shape. */
 export declare const settlementRegistryAbi: readonly [{
     readonly type: "function";
     readonly name: "paid";
@@ -898,7 +1022,34 @@ export declare const settlementRegistryAbi: readonly [{
     readonly outputs: readonly [{
         readonly type: "bool";
     }];
+}, {
+    readonly type: "function";
+    readonly name: "markPaid";
+    readonly stateMutability: "nonpayable";
+    readonly inputs: readonly [{
+        readonly name: "paymentId";
+        readonly type: "bytes32";
+    }, {
+        readonly name: "amount";
+        readonly type: "uint256";
+    }];
+    readonly outputs: readonly [];
 }];
+/**
+ * Functions gated by a writer allow-list (a bare call from a non-writer reverts `NotWriter`).
+ * An integrator reading this map knows WHICH verbs need a keeper key vs a user key. `supports()`
+ * cannot see gating (it only proves code+selector exist), so the label is carried here.
+ */
+export declare const WRITER_GATED: {
+    readonly "x402Facilitator.markPaid": {
+        readonly gate: "onlyWriter";
+        readonly role: "keeper";
+    };
+    readonly "settlementRegistry.markPaid": {
+        readonly gate: "onlyWriter";
+        readonly role: "keeper";
+    };
+};
 /** FleetExecutor — products/fleet-executor/src/FleetExecutor.sol (EIP-712 batch + ERC-7821). */
 export declare const fleetExecutorAbi: readonly [{
     readonly type: "function";
@@ -1309,6 +1460,47 @@ export declare const abis: {
             readonly name: "escrow";
             readonly type: "address";
         }];
+    }, {
+        readonly type: "function";
+        readonly name: "predict";
+        readonly stateMutability: "view";
+        readonly inputs: readonly [{
+            readonly name: "payer";
+            readonly type: "address";
+        }, {
+            readonly name: "d";
+            readonly type: "tuple";
+            readonly components: readonly [{
+                readonly name: "counterparty";
+                readonly type: "address";
+            }, {
+                readonly name: "arbiter";
+                readonly type: "address";
+            }, {
+                readonly name: "token";
+                readonly type: "address";
+            }, {
+                readonly name: "amount";
+                readonly type: "uint256";
+            }, {
+                readonly name: "hash";
+                readonly type: "bytes32";
+            }, {
+                readonly name: "timeout";
+                readonly type: "uint64";
+            }];
+        }];
+        readonly outputs: readonly [{
+            readonly type: "address";
+        }];
+    }, {
+        readonly type: "function";
+        readonly name: "feeBps";
+        readonly stateMutability: "view";
+        readonly inputs: readonly [];
+        readonly outputs: readonly [{
+            readonly type: "uint16";
+        }];
     }];
     readonly streamRail: readonly [{
         readonly type: "function";
@@ -1452,6 +1644,22 @@ export declare const abis: {
     }];
     readonly streamFactoryLive: readonly [{
         readonly type: "function";
+        readonly name: "feeBps";
+        readonly stateMutability: "view";
+        readonly inputs: readonly [];
+        readonly outputs: readonly [{
+            readonly type: "uint16";
+        }];
+    }, {
+        readonly type: "function";
+        readonly name: "minFee";
+        readonly stateMutability: "view";
+        readonly inputs: readonly [];
+        readonly outputs: readonly [{
+            readonly type: "uint256";
+        }];
+    }, {
+        readonly type: "function";
         readonly name: "setMandate";
         readonly stateMutability: "nonpayable";
         readonly inputs: readonly [{
@@ -1499,6 +1707,68 @@ export declare const abis: {
         }];
         readonly outputs: readonly [{
             readonly type: "address";
+        }];
+    }, {
+        readonly type: "function";
+        readonly name: "predict";
+        readonly stateMutability: "view";
+        readonly inputs: readonly [{
+            readonly name: "payer";
+            readonly type: "address";
+        }, {
+            readonly name: "recipient";
+            readonly type: "address";
+        }, {
+            readonly name: "token";
+            readonly type: "address";
+        }, {
+            readonly name: "amount";
+            readonly type: "uint256";
+        }, {
+            readonly name: "start";
+            readonly type: "uint64";
+        }, {
+            readonly name: "end";
+            readonly type: "uint64";
+        }];
+        readonly outputs: readonly [{
+            readonly type: "address";
+        }];
+    }, {
+        readonly type: "function";
+        readonly name: "mandate";
+        readonly stateMutability: "view";
+        readonly inputs: readonly [{
+            readonly name: "";
+            readonly type: "address";
+        }, {
+            readonly name: "";
+            readonly type: "address";
+        }, {
+            readonly name: "";
+            readonly type: "address";
+        }];
+        readonly outputs: readonly [{
+            readonly name: "token";
+            readonly type: "address";
+        }, {
+            readonly name: "ticket";
+            readonly type: "uint256";
+        }, {
+            readonly name: "period";
+            readonly type: "uint64";
+        }, {
+            readonly name: "lastEnd";
+            readonly type: "uint64";
+        }, {
+            readonly name: "laps";
+            readonly type: "uint32";
+        }, {
+            readonly name: "fired";
+            readonly type: "uint32";
+        }, {
+            readonly name: "active";
+            readonly type: "bool";
         }];
     }, {
         readonly type: "event";
@@ -1847,6 +2117,18 @@ export declare const abis: {
         readonly outputs: readonly [{
             readonly type: "bool";
         }];
+    }, {
+        readonly type: "function";
+        readonly name: "markPaid";
+        readonly stateMutability: "nonpayable";
+        readonly inputs: readonly [{
+            readonly name: "paymentId";
+            readonly type: "bytes32";
+        }, {
+            readonly name: "amount";
+            readonly type: "uint256";
+        }];
+        readonly outputs: readonly [];
     }];
     readonly fleetExecutor: readonly [{
         readonly type: "function";

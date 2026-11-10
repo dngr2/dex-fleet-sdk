@@ -50,4 +50,19 @@ export class SdkError extends Error {
         this.cause = cause;
     }
 }
+/**
+ * A builder produced calldata for a module/selector the TARGET has no code (or no such selector)
+ * for — i.e. a v2-only surface pointed at a v1 address, or a chain where the rail was never
+ * deployed. Carries `to` + `selector` so the caller can act without re-parsing the message.
+ */
+export class NotDeployed extends SdkError {
+    to;
+    selector;
+    constructor(to, selector, detail = "") {
+        super(`NotDeployed: ${to} has no code / no selector ${selector}${detail ? ` (${detail})` : ""}`);
+        this.to = to;
+        this.selector = selector;
+        this.name = "NotDeployed";
+    }
+}
 //# sourceMappingURL=types.js.map

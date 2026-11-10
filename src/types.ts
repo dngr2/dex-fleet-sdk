@@ -60,8 +60,20 @@ export interface EscrowDeal {
   hook: Address;
 }
 
-/** EIP-712 domain + typed-data bundle for a signed mandate. */
-export interface SignedMandate {
+/**
+ * A LIVE g2b escrow deal — mirrors the deployed EscrowFactory's 6-field Deal (no referrer/grace/hook).
+ * This is what the live factory's `createFor` takes; the frozen 8-field `EscrowDeal` is the wave shape.
+ */
+export interface LiveEscrowDeal {
+  counterparty: Address;
+  arbiter: Address;
+  token: Address;
+  amount: bigint;
+  hash: Hex;
+  timeout: bigint;
+}
+
+/** EIP-712 domain + typed-data bundle for a signed mandate. */export interface SignedMandate {
   domain: {
     name: string;
     version: string;
@@ -118,11 +130,27 @@ export const EIP712_MANDATE = {
 } as const;
 
 export class SdkError extends Error {
-  override readonly name = "SdkError";
+  override name: string = "SdkError";
   constructor(
     message: string,
     override readonly cause?: unknown,
   ) {
     super(message);
+  }
+}
+
+/**
+ * A builder produced calldata for a module/selector the TARGET has no code (or no such selector)
+ * for — i.e. a v2-only surface pointed at a v1 address, or a chain where the rail was never
+ * deployed. Carries `to` + `selector` so the caller can act without re-parsing the message.
+ */
+export class NotDeployed extends SdkError {
+  constructor(
+    readonly to: Address,
+    readonly selector: Hex,
+    detail = "",
+  ) {
+    super(`NotDeployed: ${to} has no code / no selector ${selector}${detail ? ` (${detail})` : ""}`);
+    this.name = "NotDeployed";
   }
 }

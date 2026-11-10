@@ -1,4 +1,4 @@
-import type { Address, CallData, Call, EscrowDeal, Hex } from "./types.js";
+import type { Address, CallData, Call, EscrowDeal, LiveEscrowDeal, Hex } from "./types.js";
 /** IPaymentRail.pay(to, token, amount, memo, referrer) — payable when token == NATIVE. */
 export declare function pay(a: {
     rail: Address;
@@ -46,6 +46,28 @@ export declare function outcome(a: {
 /** Escrow CHILD's sweepExcess() — return post-settlement deposits to the payer. */
 export declare function sweepExcess(a: {
     escrow: Address;
+}): CallData;
+/**
+ * LIVE g2b EscrowFactory.create(counterparty, token, amount, hash, timeout) — the published verb
+ * (selector 0xa083c5e1, in llms.txt). Use THIS against the live factory: the frozen 8-field
+ * `createFor` selector (0xd9b22c47) is ABSENT from the live runtime.
+ */
+export declare function createEscrowLive(a: {
+    factory: Address;
+    counterparty: Address;
+    token: Address;
+    amount: bigint;
+    /** keccak256(preimage); zero => arbiter-only, no hashlock. */
+    hash: Hex;
+    /** unix seconds; refund opens here. */
+    timeout: bigint;
+    value?: bigint;
+}): CallData;
+/** LIVE g2b EscrowFactory.createFor(6-field Deal) — escrow with a named arbiter, no referrer. */
+export declare function createEscrowLiveFor(a: {
+    factory: Address;
+    deal: LiveEscrowDeal;
+    value?: bigint;
 }): CallData;
 /** RequestRegistry.request(destination, token, amount, memo) — mints a deposit address. */
 export declare function createLink(a: {
@@ -170,6 +192,16 @@ export declare function settlementRecord(a: {
 export declare function settlementPaid(a: {
     registry: Address;
     paymentId: Hex;
+}): CallData;
+/**
+ * SettlementRegistry.markPaid(paymentId, amount) — writer-gated record. NB the DIFFERENT arity from
+ * x402Facilitator.markPaid(…,to,token,amount): 0x39747824 vs 0x7dffcf3b. Building the wrong one
+ * against a registry/facilitator address decodes garbage — hence a distinct builder + a pinned test.
+ */
+export declare function markPaidRegistry(a: {
+    registry: Address;
+    paymentId: Hex;
+    amount: bigint;
 }): CallData;
 /** FleetExecutor.execute(calls, nonce, deadline, sig) — EIP-712 signed batch. */
 export declare function batch(a: {

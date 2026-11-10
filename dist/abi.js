@@ -189,6 +189,28 @@ export const escrowFactoryLiveAbi = [
         ],
         outputs: [{ name: "escrow", type: "address" }],
     },
+    {
+        type: "function",
+        name: "predict",
+        stateMutability: "view",
+        inputs: [
+            { name: "payer", type: "address" },
+            {
+                name: "d",
+                type: "tuple",
+                components: [
+                    { name: "counterparty", type: "address" },
+                    { name: "arbiter", type: "address" },
+                    { name: "token", type: "address" },
+                    { name: "amount", type: "uint256" },
+                    { name: "hash", type: "bytes32" },
+                    { name: "timeout", type: "uint64" },
+                ],
+            },
+        ],
+        outputs: [{ type: "address" }],
+    },
+    { type: "function", name: "feeBps", stateMutability: "view", inputs: [], outputs: [{ type: "uint16" }] },
 ];
 /** IStreamRail — products/rails/src/IStreamRail.sol (frozen), signed-mandate portal. */
 export const streamRailAbi = [
@@ -265,8 +287,27 @@ export const streamRailAbi = [
         ],
     },
 ];
-/** Live g2a StreamFactory — setMandate(recipient,token,ticket,period,laps,t0) + createStreamFor. */
+/**
+ * Live g2a StreamFactory — setMandate(recipient,token,ticket,period,laps,t0) + createStreamFor,
+ * plus the live reads a recurring-link snippet needs: `feeBps()`, `minFee()`, `predict(...)` and the
+ * public `mandate(payer,recipient,token)` getter. All four selectors were runtime-scanned PRESENT on
+ * the live v2 streamRail 0x8f26d7a5… (Base, 2026-11-10) and the views eth_call-read live.
+ */
 export const streamFactoryLiveAbi = [
+    {
+        type: "function",
+        name: "feeBps",
+        stateMutability: "view",
+        inputs: [],
+        outputs: [{ type: "uint16" }],
+    },
+    {
+        type: "function",
+        name: "minFee",
+        stateMutability: "view",
+        inputs: [],
+        outputs: [{ type: "uint256" }],
+    },
     {
         type: "function",
         name: "setMandate",
@@ -294,6 +335,39 @@ export const streamFactoryLiveAbi = [
             { name: "end", type: "uint64" },
         ],
         outputs: [{ type: "address" }],
+    },
+    {
+        type: "function",
+        name: "predict",
+        stateMutability: "view",
+        inputs: [
+            { name: "payer", type: "address" },
+            { name: "recipient", type: "address" },
+            { name: "token", type: "address" },
+            { name: "amount", type: "uint256" },
+            { name: "start", type: "uint64" },
+            { name: "end", type: "uint64" },
+        ],
+        outputs: [{ type: "address" }],
+    },
+    {
+        type: "function",
+        name: "mandate",
+        stateMutability: "view",
+        inputs: [
+            { name: "", type: "address" },
+            { name: "", type: "address" },
+            { name: "", type: "address" },
+        ],
+        outputs: [
+            { name: "token", type: "address" },
+            { name: "ticket", type: "uint256" },
+            { name: "period", type: "uint64" },
+            { name: "lastEnd", type: "uint64" },
+            { name: "laps", type: "uint32" },
+            { name: "fired", type: "uint32" },
+            { name: "active", type: "bool" },
+        ],
     },
     {
         type: "event",
@@ -458,6 +532,10 @@ export const x402FacilitatorAbi = [
         ],
     },
     {
+        // NB: facilitator's markPaid takes (bytes32,address,address,uint256) — the SettlementRegistry's
+        // is (bytes32,uint256). A builder that encodes one against the other's `to` reverts on decode
+        // (or, worse, writes the wrong record). Kept in SEPARATE abi constants so the two cannot be
+        // confused; both selectors are pinned in test/buildCallData.test.ts.
         type: "function",
         name: "markPaid",
         stateMutability: "nonpayable",
@@ -470,7 +548,7 @@ export const x402FacilitatorAbi = [
         outputs: [],
     },
 ];
-/** SettlementRegistry (lane 10) — ISettlementRegistry.sol, read side. */
+/** SettlementRegistry (lane 10) — ISettlementRegistry.sol, read side + its OWN writer shape. */
 export const settlementRegistryAbi = [
     {
         type: "function",
@@ -483,7 +561,27 @@ export const settlementRegistryAbi = [
         ],
     },
     { type: "function", name: "isWriter", stateMutability: "view", inputs: [{ name: "who", type: "address" }], outputs: [{ type: "bool" }] },
+    {
+        // (bytes32,uint256) — NOT the x402Facilitator's (bytes32,address,address,uint256).
+        type: "function",
+        name: "markPaid",
+        stateMutability: "nonpayable",
+        inputs: [
+            { name: "paymentId", type: "bytes32" },
+            { name: "amount", type: "uint256" },
+        ],
+        outputs: [],
+    },
 ];
+/**
+ * Functions gated by a writer allow-list (a bare call from a non-writer reverts `NotWriter`).
+ * An integrator reading this map knows WHICH verbs need a keeper key vs a user key. `supports()`
+ * cannot see gating (it only proves code+selector exist), so the label is carried here.
+ */
+export const WRITER_GATED = {
+    "x402Facilitator.markPaid": { gate: "onlyWriter", role: "keeper" },
+    "settlementRegistry.markPaid": { gate: "onlyWriter", role: "keeper" },
+};
 /** FleetExecutor — products/fleet-executor/src/FleetExecutor.sol (EIP-712 batch + ERC-7821). */
 export const fleetExecutorAbi = [
     {

@@ -15,6 +15,7 @@ import {
   paymentRailAbi,
   escrowRailAbi,
   escrowAbi,
+  escrowFactoryLiveAbi,
   streamRailAbi,
   streamFactoryLiveAbi,
   requestRegistryAbi,
@@ -24,7 +25,7 @@ import {
   settlementRegistryAbi,
   fleetExecutorAbi,
 } from "./abi.js";
-import type { Address, CallData, Call, EscrowDeal, Hex } from "./types.js";
+import type { Address, CallData, Call, EscrowDeal, LiveEscrowDeal, Hex } from "./types.js";
 
 interface BuildArgs {
   to: Address;
@@ -108,6 +109,43 @@ export function sweepExcess(a: { escrow: Address }): CallData {
 /** The 8-field Deal as a positional tuple, in struct order (all static → flat head). */
 function toDealTuple(d: EscrowDeal): readonly unknown[] {
   return [d.counterparty, d.arbiter, d.token, d.amount, d.hash, d.timeout, d.releaseGrace, d.hook];
+}
+
+/** The 6-field LIVE Deal (no referrer/grace/hook) as a positional tuple. */
+function toLiveDealTuple(d: LiveEscrowDeal): readonly unknown[] {
+  return [d.counterparty, d.arbiter, d.token, d.amount, d.hash, d.timeout];
+}
+
+/**
+ * LIVE g2b EscrowFactory.create(counterparty, token, amount, hash, timeout) — the published verb
+ * (selector 0xa083c5e1, in llms.txt). Use THIS against the live factory: the frozen 8-field
+ * `createFor` selector (0xd9b22c47) is ABSENT from the live runtime.
+ */
+export function createEscrowLive(a: {
+  factory: Address;
+  counterparty: Address;
+  token: Address;
+  amount: bigint;
+  /** keccak256(preimage); zero => arbiter-only, no hashlock. */
+  hash: Hex;
+  /** unix seconds; refund opens here. */
+  timeout: bigint;
+  value?: bigint;
+}): CallData {
+  return build(escrowFactoryLiveAbi, "create", {
+    to: a.factory,
+    args: [a.counterparty, a.token, a.amount, a.hash, a.timeout],
+    ...(a.value !== undefined ? { value: a.value } : {}),
+  });
+}
+
+/** LIVE g2b EscrowFactory.createFor(6-field Deal) — escrow with a named arbiter, no referrer. */
+export function createEscrowLiveFor(a: { factory: Address; deal: LiveEscrowDeal; value?: bigint }): CallData {
+  return build(escrowFactoryLiveAbi, "createFor", {
+    to: a.factory,
+    args: [toLiveDealTuple(a.deal)],
+    ...(a.value !== undefined ? { value: a.value } : {}),
+  });
 }
 
 // ---------------------------------------------------------------------------- payment links
@@ -278,6 +316,15 @@ export function settlementRecord(a: { facilitator: Address; paymentId: Hex }): C
 /** SettlementRegistry.paid(paymentId) — read call: (amount, at). */
 export function settlementPaid(a: { registry: Address; paymentId: Hex }): CallData {
   return build(settlementRegistryAbi, "paid", { to: a.registry, args: [a.paymentId] });
+}
+
+/**
+ * SettlementRegistry.markPaid(paymentId, amount) — writer-gated record. NB the DIFFERENT arity from
+ * x402Facilitator.markPaid(…,to,token,amount): 0x39747824 vs 0x7dffcf3b. Building the wrong one
+ * against a registry/facilitator address decodes garbage — hence a distinct builder + a pinned test.
+ */
+export function markPaidRegistry(a: { registry: Address; paymentId: Hex; amount: bigint }): CallData {
+  return build(settlementRegistryAbi, "markPaid", { to: a.registry, args: [a.paymentId, a.amount] });
 }
 
 // ---------------------------------------------------------------------------- batch (FleetExecutor)

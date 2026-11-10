@@ -86,6 +86,29 @@ describe("selectors (pinned via cast sig)", () => {
   it("executeSelf → 0x114cbac9", () => {
     expect(sel(b.executeSelf({ executor: RAIL, calls: [{ target: ME, value: 0n, data: "0x" }] }))).toBe("0x114cbac9");
   });
+  it("x402 markPaid (bytes32,address,address,uint256) → 0x7dffcf3b", () => {
+    expect(sel(b.markPaid({ facilitator: RAIL, paymentId: PREIMAGE, to: ME, token: NATIVE, amount: 1n }))).toBe("0x7dffcf3b");
+  });
+  it("settlementRegistry markPaid (bytes32,uint256) → 0x39747824 — DIFFERENT from x402's", () => {
+    const cd = b.markPaidRegistry({ registry: RAIL, paymentId: PREIMAGE, amount: 1n });
+    expect(sel(cd)).toBe("0x39747824");
+    // the two markPaid selectors must NOT coincide (a copy-paste would encode the wrong arity)
+    expect(sel(cd)).not.toBe(sel(b.markPaid({ facilitator: RAIL, paymentId: PREIMAGE, to: ME, token: NATIVE, amount: 1n })));
+  });
+
+  // --- LIVE v2 builders: the published verbs the deployed factories actually dispatch on ---------
+  // Selectors scanned PRESENT in the live runtime of g2b 0x1826C892… and g2a 0x8f26d7a5… (Base,
+  // 2026-11-10), so a drift here is a mainnet revert, caught offline.
+  it("createEscrowLive (live g2b create) → 0xa083c5e1", () => {
+    expect(sel(b.createEscrowLive({ factory: RAIL, counterparty: ME, token: NATIVE, amount: 1n, hash: ZERO32, timeout: 600n }))).toBe("0xa083c5e1");
+  });
+  it("createEscrowLiveFor (live g2b 6-field createFor tuple) → 0xea6eb391", () => {
+    const deal = { counterparty: ME, arbiter: ZERO, token: NATIVE, amount: 1n, hash: ZERO32, timeout: 600n };
+    expect(sel(b.createEscrowLiveFor({ factory: RAIL, deal }))).toBe("0xea6eb391");
+  });
+  it("setMandateLive (live g2a setMandate) → 0x88f67583", () => {
+    expect(sel(b.setMandateLive({ factory: RAIL, recipient: ME, token: NATIVE, ticket: 1n, period: 2592000n, laps: 12, t0: 1n }))).toBe("0x88f67583");
+  });
 });
 
 describe("selectors agree with viem's own encoder (no hand-rolled drift)", () => {
@@ -165,5 +188,23 @@ describe("addressBook", () => {
     const book = addressBook({ base: { paymentRail: RAIL } });
     // @ts-expect-error — "nope" is not a ChainKey but the reader keys by string at runtime.
     expect(() => book.rail("nope", "paymentRail")).toThrow();
+  });
+
+  it("checksum REJECTS a corrupted mixed-case EIP-55 (viem getAddress alone would accept it)", async () => {
+    const { checksum } = await import("../src/addressBook.js");
+    // last char flipped 8→9 on an otherwise-valid mixed-case addr: getAddress normalises it silently,
+    // so the pre-fix "EIP-55 check" (which only called getAddress) never fired.
+    const corrupted = "0xe9515881fe6976eD9CB55328B8308F6eF7c311a9";
+    expect(() => checksum(corrupted)).toThrow(/EIP-55/);
+    // the true checksummed form passes, and an all-lowercase form is accepted (no checksum to contradict).
+    expect(checksum("0xe9515881fe6976eD9CB55328B8308F6eF7c311a8")).toBe(RAIL);
+    expect(checksum("0xe9515881fe6976ed9cb55328b8308f6ef7c311a8")).toBe(RAIL);
+  });
+
+  it("parses a nested v2 block and checksums it", async () => {
+    const { addressBook } = await import("../src/addressBook.js");
+    const V2 = getAddress("0xaC13a6f51E886dDE81bB4692839987E6d41E1940");
+    const book = addressBook({ base: { paymentRail: RAIL, v2: { paymentRail: V2 } } });
+    expect(book.book.base?.v2?.paymentRail).toBe(V2);
   });
 });

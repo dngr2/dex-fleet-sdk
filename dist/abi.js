@@ -11,10 +11,12 @@
  * `as const` so viem infers argument/return types from these fragments at compile time, and so the
  * whole module stays tree-shakeable (`sideEffects:false`).
  *
- * DIVERGENCE NOTE: these are the WAVE-1 shapes the wave codes against. The LIVE fleet contracts
- * (addresses.json) are the audited v1 line, which differs where noted (`g2b EscrowFactory.createFor`
- * takes a 6-field Deal, no referrer; `g2a StreamFactory` uses `setMandate(...)` not
- * `setMandateFor(...sig)`). Both are exposed; see README "frozen vs live".
+ * DIVERGENCE NOTE: these are the WAVE-1 shapes the wave codes against. `addresses.json` now carries
+ * the new line on base/optimism/unichain and v1 on the other eight chains; both differ from the frozen
+ * shapes where noted (`g2b EscrowFactory.createFor` takes a 6-field Deal, no referrer; `g2a
+ * StreamFactory` uses `setMandate(...)` not `setMandateFor(...sig)`; the frozen `minFee(address)` is
+ * deployed as a bare `minFee()` and `quote(token,amount)` is absent from every line — see README
+ * "frozen vs live"). Both shapes are exposed; `quoteLive()` is the client-side stand-in for `quote()`.
  */
 /** IPaymentRail — products/rails/src/IPaymentRail.sol (frozen). */
 export const paymentRailAbi = [
@@ -66,6 +68,16 @@ export const paymentRailAbi = [
             { name: "referrer", type: "address", indexed: false },
         ],
     },
+];
+/**
+ * The DEPLOYED minFee shape. The frozen interface names `minFee(address token)`; what actually shipped
+ * on the new line is a no-arg `minFee()` (`0x24ec7590`, live on the p2 registry, g2a streamRail and g2b
+ * escrowRail — all return 0 as of 2026-11-13). Kept as its own fragment so `paymentRailAbi` stays a
+ * faithful mirror of the frozen interface while a reader can still call the deployed getter.
+ */
+export const paymentRailLiveAbi = [
+    { type: "function", name: "feeBps", stateMutability: "view", inputs: [], outputs: [{ type: "uint16" }] },
+    { type: "function", name: "minFee", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
 ];
 /** IEscrowRail — products/rails/src/IEscrowRail.sol (frozen), factory side. */
 export const escrowRailAbi = [
@@ -290,8 +302,12 @@ export const streamRailAbi = [
 /**
  * Live g2a StreamFactory — setMandate(recipient,token,ticket,period,laps,t0) + createStreamFor,
  * plus the live reads a recurring-link snippet needs: `feeBps()`, `minFee()`, `predict(...)` and the
- * public `mandate(payer,recipient,token)` getter. All four selectors were runtime-scanned PRESENT on
- * the live v2 streamRail 0x8f26d7a5… (Base, 2026-11-10) and the views eth_call-read live.
+ * public `mandate(payer,recipient,token)` getter.
+ *
+ * Re-probed 2026-11-13 against the CURRENT new-line rail 0x3882A049… (Base) — a rebuild whose runtime
+ * is byte-identical to the earlier 0x8f26d7a5… copy (keccak 0xa4798afc…3a6761, both 16643 B). All five
+ * selectors scanned PRESENT and the views eth_call-read live (`minFee()` → 0). `predict` here is the
+ * deployed 6-arg uint64-end form (`0xce580c87`), matching products/g2a-streams/src/StreamFactory.sol:322.
  */
 export const streamFactoryLiveAbi = [
     {

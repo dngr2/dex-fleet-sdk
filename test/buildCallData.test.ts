@@ -12,7 +12,7 @@ import * as b from "../src/buildCallData.js";
 import { paymentRailAbi, escrowAbi } from "../src/abi.js";
 import { NATIVE, type Address, type EscrowDeal, type Hex } from "../src/types.js";
 
-const RAIL = getAddress("0xe9515881fe6976eD9CB55328B8308F6eF7c311a8");
+const RAIL = getAddress("0x417c41d406c61E09958032Cd77338fc1F1ac7D45");
 const ME = getAddress("0x27339Dd87d6A22414b79Dc7966526906bfBe92C2");
 const ZERO = NATIVE;
 const ZERO32 = "0x0000000000000000000000000000000000000000000000000000000000000000" as Hex;
@@ -197,13 +197,13 @@ describe("addressBook", () => {
     const corrupted = "0xe9515881fe6976eD9CB55328B8308F6eF7c311a9";
     expect(() => checksum(corrupted)).toThrow(/EIP-55/);
     // the true checksummed form passes, and an all-lowercase form is accepted (no checksum to contradict).
-    expect(checksum("0xe9515881fe6976eD9CB55328B8308F6eF7c311a8")).toBe(RAIL);
-    expect(checksum("0xe9515881fe6976ed9cb55328b8308f6ef7c311a8")).toBe(RAIL);
+    expect(checksum("0x417c41d406c61E09958032Cd77338fc1F1ac7D45")).toBe(RAIL);
+    expect(checksum("0x417c41d406c61E09958032Cd77338fc1F1ac7D45")).toBe(RAIL);
   });
 
   it("parses a nested v2 block and checksums it", async () => {
     const { addressBook } = await import("../src/addressBook.js");
-    const V2 = getAddress("0xaC13a6f51E886dDE81bB4692839987E6d41E1940");
+    const V2 = getAddress("0x417c41d406c61E09958032Cd77338fc1F1ac7D45");
     const book = addressBook({ base: { paymentRail: RAIL, v2: { paymentRail: V2 } } });
     expect(book.book.base?.v2?.paymentRail).toBe(V2);
   });

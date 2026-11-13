@@ -57,10 +57,20 @@ OK  0x51B6c98a857E19FBC5C3f85b04D28E8f91c54426   (fleetPaymaster)
 OK  0x39019ECf94A54EB9D62e7cBc1bB66724aA1db70a   (tollRegistry)
 ```
 
+**These five are the pre-relaunch addresses.** `addresses.json` itself has since moved on
+(`x402Facilitator` → `0x5849eF6f…`, `settlementRegistry` → `0xdDA0728F…`); the block above is a
+historical EIP-55 conformance sample, not the current book. Writer gating on the live pair is satisfied
+for `x402writer` `0xD85661ED…` on both, Base/OP/Uni (`products/settlement/DEPLOY-EVIDENCE.md`).
+
 ## 4. g2a / g2b OP-row confirmation
 
-`addresses.json` OP row carries `streamRail 0x61AB1942…` (g2a-OP) and `escrowRail 0x80793a7d…`
-(g2b-OP) — matching `products/revenue/FEE-RAISE-PLAN.md §CLOSED`. Collision note in `$comment`:
+**RE-READ 2026-11-12 (the paragraph below the line is the stale one, kept as history):** the OP row no
+longer carries those v1 rails — it carries the v2.1 lineup (`streamRail 0x3882A049…` 16643 B,
+`escrowRail 0x4B05fA6a…` 10425 B), both measured on three OP RPCs. The v1 copies are still DEPLOYED
+there (`0x61AB1942…` 9385 B, `0x80793a7d…` 7794 B, both now paused) — superseded, not absent.
+
+~~`addresses.json` OP row carries `streamRail 0x61AB1942…` (g2a-OP) and `escrowRail 0x80793a7d…`
+(g2b-OP) — matching `products/revenue/FEE-RAISE-PLAN.md §CLOSED`.~~ Collision note in `$comment`:
 `0x9651cD59…` is Base-RequestRegistry but OP/9-chain-Router; `0x61AB1942…` is OP-StreamFactory but a
 vault elsewhere — never key on a bare address without its chain (#95).
 

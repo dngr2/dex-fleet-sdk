@@ -83,27 +83,31 @@ await pay(client, { rail: book.rail("base", "paymentRail"), to, token: NATIVE, a
 ## FROZEN vs LIVE (read this before wiring `quote()`) — a DATED promise
 
 `abi.ts` mirrors the **frozen BUILD-WAVE-1 interfaces** (exec1's `products/rails/src/*.sol`) —
-the shape the wave codes against. The **live** deployments named in `addresses.json` are the
-audited **v1** line, which does *not* yet implement every frozen read.
+the shape the wave codes against. `addresses.json` now carries the **new line** at the top level of
+base, optimism and unichain (CREATE2-invariant), and **v1** on the other eight chains. Neither line
+implements every frozen read.
 
-Probed live on Base (2026-11-09, two RPCs, `eth_call` + runtime selector scan):
+Probed live on Base, re-dated **2026-11-13** (runtime selector scan on both the v1 registry
+`0xe9515881…` and the new-line registry `0x417c41d4…`, plus `eth_call`):
 
-| member | frozen rail | live p2 registry `0xe9515881…` | flips when |
+| member | frozen rail | v1 registry | new-line registry `0x417c41d4…` |
 |---|---|---|---|
-| `feeBps()` | yes | **yes** (500) | — (already live) |
-| `owner()` / `feeRecipient()` | — | yes (orphan `0xe218…204B`) | — |
-| `register()` / `predict()` | — | yes | — |
-| `quote(token,amount)` | yes | **NO** — selector `8f79306e` absent from runtime | **v2 factories fire** |
-| `minFee(token)` | yes | **NO** — no `minFee()` getter in deployed bytecode | **v2 factories fire** |
+| `feeBps()` | yes | **yes** (500) | **yes** (500) |
+| `owner()` / `feeRecipient()` | — | yes (orphan `0xe218…204B`) | yes (`0x038d7B32…`, `0x5c0fc091…`) |
+| `register()` / `predict()` | — | yes | yes |
+| `quote(token,amount)` | yes | **NO** — `8f79306e` absent from runtime, call reverts | **NO** — still absent, still reverts |
+| `minFee()` (no-arg) | — | **NO** | **YES** — `24ec7590` live, returns `0` (also on g2a/g2b new-line rails) |
+| `minFee(token)` (frozen sig) | yes | **NO** | **NO** — `5c9edb87` absent; the deployed getter takes no argument |
 
-**This table is a dated promise, not a permanent caveat.** The two `NO` rows are not "unimplemented
-forever" — they are the FROZEN wave's surface, and they become callable **the moment the v2 factories
-fire** (the deployment that replaces the v1 registries named here). Until then, a `quote()` call
-against a listed live address **reverts**.
+**The two `NO` rows are the frozen wave's surface, not a permanent caveat** — but note the shape
+drift: `abi.ts` declares `minFee(token)`, while what actually deployed is a bare `minFee()`. A call
+using the frozen signature reverts on every listed address, on both lines. `quote()` likewise
+reverts everywhere; wire against the client-side helper below until a factory lands it.
 
 Meanwhile the live toll is real and computed on-chain: `FeeMath.toll(amount, feeBps, minFee)` inside
-each Forwarder, reading `registry.minFee()` *state* (slot 2, currently 0) — the public getter is just
-not deployed. `g2b` escrow, `g2a` stream, and `p3` router all likewise revert on `quote()`.
+each Forwarder, reading `registry.minFee()` *state* (slot 2, currently 0) — that is the read the
+new-line `minFee()` getter now exposes. `g2b` escrow, `g2a` stream, and `p3` router all still revert
+on `quote()`.
 
 **The recommended live flow** (also the whole of `examples/liveQuote.ts`):
 
@@ -112,7 +116,7 @@ import { feeBps } from "@fleet/sdk/abi";        // read the live rate
 import { quoteLive } from "@fleet/sdk";         // ONE client-side toll fn, mirrors FeeMath.toll
 
 const bps  = await client.readContract({ address: rail, abi: paymentRailAbi, functionName: "feeBps" });
-const minF = 0n;                                 // registry.minFee() slot-2 state; 0 until set
+const minF = 0n;                                 // no-arg registry.minFee() is live and returns 0
 const q    = quoteLive({ amount, feeBps: bps, minFee: minF, token });   // { fee, out, total, token }
 ```
 

@@ -80,6 +80,69 @@ export const paymentRailAbi = [
 export const paymentRailLiveAbi = [
   { type: "function", name: "feeBps", stateMutability: "view", inputs: [], outputs: [{ type: "uint16" }] },
   { type: "function", name: "minFee", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "feeRecipient", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { type: "function", name: "paused", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
+] as const;
+
+/**
+ * The admin surface every live fleet FACTORY shares (`Registry`, `StreamFactory`, `EscrowFactory` —
+ * all three copy owner/feeBps/feeRecipient/paused from the same base). Read-only members only: this
+ * is for the getters an integrator needs to price and to know whether the rail is open, not for the
+ * owner verbs.
+ *
+ * WHY `feeRecipient()` matters (SDK-2): the treasury is a LIVE read, not a constant. It is moved by
+ * a 48h staged timelock on the new line, so ANY copy of it in a fixtures file goes stale silently —
+ * and the vaults/escrows pay `factory.feeRecipient()` at settlement, so a stale copy mis-states where
+ * a fee actually goes. Read it, never carry it.
+ *
+ * `paused()` is the emergency brake: on every factory it gates the CREATE path (`register`,
+ * `createFor`, `setMandate`-adjacent creates), NOT settlement. A paused rail still releases and
+ * refunds; it just refuses new business. Hence "paused" is a third answer distinct from both
+ * "deployed and open" and "not deployed".
+ */
+export const factoryAdminAbi = [
+  { type: "function", name: "owner", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { type: "function", name: "feeBps", stateMutability: "view", inputs: [], outputs: [{ type: "uint16" }] },
+  { type: "function", name: "feeRecipient", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { type: "function", name: "paused", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
+] as const;
+
+/**
+ * The minimum ERC-20 surface an approval needs (SDK-3). Two members, both load-bearing: `approve` is
+ * the writer, `allowance` is the read that tells a caller whether a revoke is even needed.
+ *
+ * NOT the fleet's own ABI — this is the token's. It is here so an approve/revoke is a *builder* like
+ * every other calldata path in this package, instead of a hand-rolled `encodeFunctionData` in
+ * userland (which is how the site forks drifted into unconditional `2n**256n-1n`).
+ */
+export const erc20ApprovalAbi = [
+  {
+    type: "function",
+    name: "approve",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "allowance",
+    stateMutability: "view",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "decimals",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint8" }],
+  },
 ] as const;
 
 /** IEscrowRail — products/rails/src/IEscrowRail.sol (frozen), factory side. */
@@ -685,6 +748,8 @@ export const abis = {
   x402Facilitator: x402FacilitatorAbi,
   settlementRegistry: settlementRegistryAbi,
   fleetExecutor: fleetExecutorAbi,
+  factoryAdmin: factoryAdminAbi,
+  erc20Approval: erc20ApprovalAbi,
 } as const;
 
 export type AbiName = keyof typeof abis;

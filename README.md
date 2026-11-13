@@ -93,16 +93,18 @@ Probed live on Base, re-dated **2026-11-13** (runtime selector scan on both the 
 | member | frozen rail | v1 registry | new-line registry `0x417c41d4…` |
 |---|---|---|---|
 | `feeBps()` | yes | **yes** (500) | **yes** (500) |
-| `owner()` / `feeRecipient()` | — | yes (orphan `0xe218…204B`) | yes (`0x038d7B32…`, `0x5c0fc091…`) |
+| `owner()` / `feeRecipient()` | — | yes (owner **and** recipient = `0xe218…204B`, orphan key) | yes (owner `0x038d7B32…`; recipient `0x5c0fc091…`, read live) |
 | `register()` / `predict()` | — | yes | yes |
 | `quote(token,amount)` | yes | **NO** — `8f79306e` absent from runtime, call reverts | **NO** — still absent, still reverts |
 | `minFee()` (no-arg) | — | **NO** | **YES** — `24ec7590` live, returns `0` (also on g2a/g2b new-line rails) |
 | `minFee(token)` (frozen sig) | yes | **NO** | **NO** — `5c9edb87` absent; the deployed getter takes no argument |
+| `paused()` (**state**, not a member) | — | **TRUE** (brake on, creates revert) | false |
 
 **The two `NO` rows are the frozen wave's surface, not a permanent caveat** — but note the shape
 drift: `abi.ts` declares `minFee(token)`, while what actually deployed is a bare `minFee()`. A call
 using the frozen signature reverts on every listed address, on both lines. `quote()` likewise
-reverts everywhere; wire against the client-side helper below until a factory lands it.
+reverts everywhere; wire against the client-side helper below until a factory lands it. And the v1
+line's brake is ON — see `status` under [Addresses](#addresses).
 
 Meanwhile the live toll is real and computed on-chain: `FeeMath.toll(amount, feeBps, minFee)` inside
 each Forwarder, reading `registry.minFee()` *state* (slot 2, currently 0) — that is the read the
@@ -129,7 +131,28 @@ the frozen `quote()` path and fails gracefully.
 ## Surfaces
 
 `quote` `pay` `createLink` `createEscrow` `release` `setMandate` `executeLap` `swap` `sweep` `verify402`
-— plus `buildCallData.batch` / `executeSelf` for the FleetExecutor EIP-712 batch.
+`approvals` — plus `buildCallData.batch` / `executeSelf` for the FleetExecutor EIP-712 batch.
+
+### Approvals (SDK-3)
+
+Pull-based surfaces need an allowance to the rail, and the builders here are exact-by-default:
+
+```ts
+import { approvals } from "@fleet/sdk/modules";
+await approvals.approve(client, { token: USDC, spender: streamFactory, amount: 1_550_000n });
+await approvals.revokeIfAny(client, { token: USDC, owner: me, spender: streamFactory }); // no-op at 0
+```
+
+`approveExact` self-expires with the pull; `approveUnlimited` (max uint256) is for a reel and is
+opt-in. **A mandate revoke is two halves** — `disarmMandate()` clears the record, `revoke()` clears the
+allowance; the site forks hand-rolled `2n**256n-1n` and did only the first.
+
+## Modules
+
+ESM and CommonJS both load (`exports` carries `import` and `require`; `require()` resolves
+`dist/cjs/…`). Before SDK-6 only `import` existed, so a CJS consumer hit `ERR_PACKAGE_PATH_NOT_EXPORTED`
+on a package that otherwise compiled for it.
+
 
 ## Settled predicate (lane-10 rule)
 
@@ -147,7 +170,7 @@ npm run example    # tsx examples/pay.ts
 
 ## Addresses
 
-`addresses.json` values are copied from source docs/genesis receipts (GOTCHA #73) and EIP-55
+`addresses.json` values are deployment facts copied from source docs/genesis receipts (GOTCHA #73) and EIP-55
 re-verified with `cast to-check-sum-address`. `addressBook()` validates EIP-55 strictly on read
 (`isAddress(addr,{strict:true})`) and, for a mixed-case input, requires `getAddress(addr) === addr`
 so a *corrupted* checksum is caught, not silently normalised — plus a malformed entry throws.
@@ -165,7 +188,43 @@ supporting contracts (`settlementRegistry`, `fleetExecutor`, `x402Facilitator`, 
 and is **Base-only (chainId 8453)** — the other 9 chains stay on the v1 addresses at each chain's top
 level. A reader must **not** assume v2 is multi-chain.
 
-> **v2-only builders revert on a v1 address.** A v2 surface pointed at a v1 addr (or a chain where
-> the rail was never deployed) reverts. Guard with `supports(client, {to, abi, fn})` — an
-> `eth_getCode` + selector-presence check, cached per client — or call `assertSupports`, which throws
-> `NotDeployed` carrying `{to, selector}` before any broadcast.
+### `status`: the eight v1 chains are PAUSED (SDK-1)
+
+Every chain block carries `status` — `live` (base, optimism, unichain) or **`v1-paused`** (the other
+eight). `v1-paused` is not a soft warning: `paused()` reads **true on all eight** (probed 2026-11-14 on
+two RPCs per chain — arbitrum, linea, polygon, bsc, opbnb, mantle, gnosis, scroll), so every CREATE
+verb on those registries reverts `Paused()`. Settlement against something already created is *not*
+gated, so an existing escrow/stream keeps working. Base Sepolia is the one place v1 is still open
+(`paused() == false`).
+
+```ts
+book.status("base");      // "live"
+book.status("arbitrum");  // "v1-paused"
+```
+
+Correct the status with a live `paused()` read — never by editing the file's guess.
+
+### `feeRecipient` is NOT in this file (SDK-2)
+
+The treasury moves (48h staged timelock on the new line), and every vault/escrow pays
+`factory.feeRecipient()` at settlement — so a stored copy goes stale with no error anywhere. Read it:
+
+```ts
+import { readFeeRecipient } from "@fleet/sdk";
+const treasury = await readFeeRecipient(client, factory);   // live eth_call, every time
+```
+
+Both lines today: new line (base/op/unichain) `0x5c0fc091…d2Ef3c`, every v1 chain and Base Sepolia
+`0xe218E382…204B` (the orphan key's recipient). Those are observations, not constants.
+
+### Guarding a send: `capability` / `canSend` / `assertCanSend` (SDK-4)
+
+`supports()` answers only "is the FUNCTION dispatched" — a paused factory passes it. `capability()`
+adds the brake and returns `ready` | `paused` | `not-deployed`; a dead RPC **throws** rather than
+answering either way (#138). `assertCanSend()` throws `Paused` (right address, shut) or `NotDeployed`
+(wrong address/generation) — different bugs, different exceptions.
+
+```ts
+const cap = await capability(client, { to: factory, abi: streamFactoryLiveAbi, fn: "setMandate" });
+if (cap.state === "paused") await waitForOpen();      // the address was fine; the brake is on
+```

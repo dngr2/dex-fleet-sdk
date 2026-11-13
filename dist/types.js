@@ -65,4 +65,18 @@ export class NotDeployed extends SdkError {
         this.name = "NotDeployed";
     }
 }
+/**
+ * The target exists and dispatches the selector, but its `paused()` brake is ON (SDK-4). A different
+ * failure from `NotDeployed`: the address is right and the calldata is right, so the fix is to wait
+ * (or to settle against it anyway — a paused rail still RELEASES, it only refuses new business).
+ * Carries `to` so a caller can route around it without re-parsing a message.
+ */
+export class Paused extends SdkError {
+    to;
+    constructor(to, detail = "") {
+        super(`Paused: ${to} is deployed but paused${detail ? ` (${detail})` : ""}`);
+        this.to = to;
+        this.name = "Paused";
+    }
+}
 //# sourceMappingURL=types.js.map

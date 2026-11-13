@@ -161,4 +161,14 @@ export declare class NotDeployed extends SdkError {
     readonly selector: Hex;
     constructor(to: Address, selector: Hex, detail?: string);
 }
+/**
+ * The target exists and dispatches the selector, but its `paused()` brake is ON (SDK-4). A different
+ * failure from `NotDeployed`: the address is right and the calldata is right, so the fix is to wait
+ * (or to settle against it anyway — a paused rail still RELEASES, it only refuses new business).
+ * Carries `to` so a caller can route around it without re-parsing a message.
+ */
+export declare class Paused extends SdkError {
+    readonly to: Address;
+    constructor(to: Address, detail?: string);
+}
 //# sourceMappingURL=types.d.ts.map

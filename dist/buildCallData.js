@@ -11,7 +11,7 @@
  * decodes; test/buildCallData.test.ts pins each selector so a drift fails the build, not the chain.
  */
 import { encodeFunctionData } from "viem";
-import { paymentRailAbi, escrowRailAbi, escrowAbi, escrowFactoryLiveAbi, streamRailAbi, streamFactoryLiveAbi, requestRegistryAbi, swapRouterAbi, sweepAbi, x402FacilitatorAbi, settlementRegistryAbi, fleetExecutorAbi, } from "./abi.js";
+import { paymentRailAbi, escrowRailAbi, escrowAbi, escrowFactoryLiveAbi, streamRailAbi, streamFactoryLiveAbi, requestRegistryAbi, swapRouterAbi, sweepAbi, x402FacilitatorAbi, settlementRegistryAbi, fleetExecutorAbi, erc20ApprovalAbi, } from "./abi.js";
 function build(abi, fn, a) {
     const data = encodeFunctionData({
         abi,
@@ -205,6 +205,47 @@ export function settlementPaid(a) {
  */
 export function markPaidRegistry(a) {
     return build(settlementRegistryAbi, "markPaid", { to: a.registry, args: [a.paymentId, a.amount] });
+}
+// ---------------------------------------------------------------------------- approvals (SDK-3)
+/**
+ * Max-uint256 — what "unlimited" means to every ERC-20 on earth. Named rather than written inline so
+ * an integrator can see the one place the sentinel lives; the site forks each hand-rolled
+ * `2n**256n-1n` in a page and drifted.
+ */
+export const UNLIMITED = 2n ** 256n - 1n;
+/**
+ * ERC-20 `approve(spender, amount)` — the general form. Prefer `approveExact` when the amount is
+ * known; the difference is not cosmetic. An unlimited allowance is a standing grant that survives
+ * the transaction: if the spender is ever re-pointed at a worse contract, the old budget is still
+ * spendable. An exact allowance self-expires (the pull consumes it).
+ *
+ * USDT-style tokens (and the canonical `transferFrom` reverting-on-nonzero-change variants) require
+ * the allowance be reset to 0 before it can be changed — `revokeApproval()` then `approve()`, two
+ * calls. The fleet's own rails are all standard ERC-20/`SafeERC20`, so one call suffices on them.
+ */
+export function approve(a) {
+    return build(erc20ApprovalAbi, "approve", { to: a.token, args: [a.spender, a.amount] });
+}
+/** Approve exactly `amount` — the default for a one-shot pull (see the reset caveat on `approve`). */
+export function approveExact(a) {
+    return approve(a);
+}
+/** Approve `UNLIMITED` (max uint256) — one tx to cover a reel of pulls. */
+export function approveUnlimited(a) {
+    return approve({ token: a.token, spender: a.spender, amount: UNLIMITED });
+}
+/**
+ * Revoke — `approve(spender, 0)`. The head of every "revoke approvals" flow: a `StreamFactory`
+ * mandate's allowance half is NOT cleared by `disarmMandate()`, so a mandate the payer no longer
+ * wants still leaves the factory able to pull the outstanding laps' worth. Disarm the mandate AND
+ * revoke the allowance; this builder is the second half.
+ */
+export function revokeApproval(a) {
+    return approve({ token: a.token, spender: a.spender, amount: 0n });
+}
+/** ERC-20 `allowance(owner, spender)` — read call. Check before spending a tx on a redundant revoke. */
+export function allowance(a) {
+    return build(erc20ApprovalAbi, "allowance", { to: a.token, args: [a.owner, a.spender] });
 }
 // ---------------------------------------------------------------------------- batch (FleetExecutor)
 /** FleetExecutor.execute(calls, nonce, deadline, sig) — EIP-712 signed batch. */

@@ -8,26 +8,36 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/cjs/index.js"
     },
     "./modules": {
       "types": "./dist/modules/index.d.ts",
-      "import": "./dist/modules/index.js"
+      "import": "./dist/modules/index.js",
+      "require": "./dist/cjs/modules/index.js"
     },
     "./abi": {
       "types": "./dist/abi.d.ts",
-      "import": "./dist/abi.js"
+      "import": "./dist/abi.js",
+      "require": "./dist/cjs/abi.js"
     },
     "./addresses.json": "./addresses.json"
   },
-  "files": ["dist", "addresses.json", "README.md"],
+  "files": [
+    "dist",
+    "addresses.json",
+    "README.md"
+  ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "npm run build:esm && npm run build:cjs && node ./scripts/write-cjs-pkg.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
     "typecheck:examples": "tsc -p tsconfig.examples.json --noEmit",
     "test": "vitest run",
-    "example": "tsx examples/pay.ts"
+    "example": "tsx examples/pay.ts",
+    "build:esm": "tsc -p tsconfig.json",
+    "build:cjs": "tsc -p tsconfig.cjs.json && node ./scripts/write-cjs-pkg.mjs",
+    "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
     "viem": "^2.21.0"

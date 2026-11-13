@@ -139,6 +139,116 @@ export declare const paymentRailLiveAbi: readonly [{
     readonly outputs: readonly [{
         readonly type: "uint256";
     }];
+}, {
+    readonly type: "function";
+    readonly name: "feeRecipient";
+    readonly stateMutability: "view";
+    readonly inputs: readonly [];
+    readonly outputs: readonly [{
+        readonly type: "address";
+    }];
+}, {
+    readonly type: "function";
+    readonly name: "paused";
+    readonly stateMutability: "view";
+    readonly inputs: readonly [];
+    readonly outputs: readonly [{
+        readonly type: "bool";
+    }];
+}];
+/**
+ * The admin surface every live fleet FACTORY shares (`Registry`, `StreamFactory`, `EscrowFactory` —
+ * all three copy owner/feeBps/feeRecipient/paused from the same base). Read-only members only: this
+ * is for the getters an integrator needs to price and to know whether the rail is open, not for the
+ * owner verbs.
+ *
+ * WHY `feeRecipient()` matters (SDK-2): the treasury is a LIVE read, not a constant. It is moved by
+ * a 48h staged timelock on the new line, so ANY copy of it in a fixtures file goes stale silently —
+ * and the vaults/escrows pay `factory.feeRecipient()` at settlement, so a stale copy mis-states where
+ * a fee actually goes. Read it, never carry it.
+ *
+ * `paused()` is the emergency brake: on every factory it gates the CREATE path (`register`,
+ * `createFor`, `setMandate`-adjacent creates), NOT settlement. A paused rail still releases and
+ * refunds; it just refuses new business. Hence "paused" is a third answer distinct from both
+ * "deployed and open" and "not deployed".
+ */
+export declare const factoryAdminAbi: readonly [{
+    readonly type: "function";
+    readonly name: "owner";
+    readonly stateMutability: "view";
+    readonly inputs: readonly [];
+    readonly outputs: readonly [{
+        readonly type: "address";
+    }];
+}, {
+    readonly type: "function";
+    readonly name: "feeBps";
+    readonly stateMutability: "view";
+    readonly inputs: readonly [];
+    readonly outputs: readonly [{
+        readonly type: "uint16";
+    }];
+}, {
+    readonly type: "function";
+    readonly name: "feeRecipient";
+    readonly stateMutability: "view";
+    readonly inputs: readonly [];
+    readonly outputs: readonly [{
+        readonly type: "address";
+    }];
+}, {
+    readonly type: "function";
+    readonly name: "paused";
+    readonly stateMutability: "view";
+    readonly inputs: readonly [];
+    readonly outputs: readonly [{
+        readonly type: "bool";
+    }];
+}];
+/**
+ * The minimum ERC-20 surface an approval needs (SDK-3). Two members, both load-bearing: `approve` is
+ * the writer, `allowance` is the read that tells a caller whether a revoke is even needed.
+ *
+ * NOT the fleet's own ABI — this is the token's. It is here so an approve/revoke is a *builder* like
+ * every other calldata path in this package, instead of a hand-rolled `encodeFunctionData` in
+ * userland (which is how the site forks drifted into unconditional `2n**256n-1n`).
+ */
+export declare const erc20ApprovalAbi: readonly [{
+    readonly type: "function";
+    readonly name: "approve";
+    readonly stateMutability: "nonpayable";
+    readonly inputs: readonly [{
+        readonly name: "spender";
+        readonly type: "address";
+    }, {
+        readonly name: "amount";
+        readonly type: "uint256";
+    }];
+    readonly outputs: readonly [{
+        readonly type: "bool";
+    }];
+}, {
+    readonly type: "function";
+    readonly name: "allowance";
+    readonly stateMutability: "view";
+    readonly inputs: readonly [{
+        readonly name: "owner";
+        readonly type: "address";
+    }, {
+        readonly name: "spender";
+        readonly type: "address";
+    }];
+    readonly outputs: readonly [{
+        readonly type: "uint256";
+    }];
+}, {
+    readonly type: "function";
+    readonly name: "decimals";
+    readonly stateMutability: "view";
+    readonly inputs: readonly [];
+    readonly outputs: readonly [{
+        readonly type: "uint8";
+    }];
 }];
 /** IEscrowRail — products/rails/src/IEscrowRail.sol (frozen), factory side. */
 export declare const escrowRailAbi: readonly [{
@@ -2232,6 +2342,76 @@ export declare const abis: {
         }];
         readonly outputs: readonly [{
             readonly type: "bytes32";
+        }];
+    }];
+    readonly factoryAdmin: readonly [{
+        readonly type: "function";
+        readonly name: "owner";
+        readonly stateMutability: "view";
+        readonly inputs: readonly [];
+        readonly outputs: readonly [{
+            readonly type: "address";
+        }];
+    }, {
+        readonly type: "function";
+        readonly name: "feeBps";
+        readonly stateMutability: "view";
+        readonly inputs: readonly [];
+        readonly outputs: readonly [{
+            readonly type: "uint16";
+        }];
+    }, {
+        readonly type: "function";
+        readonly name: "feeRecipient";
+        readonly stateMutability: "view";
+        readonly inputs: readonly [];
+        readonly outputs: readonly [{
+            readonly type: "address";
+        }];
+    }, {
+        readonly type: "function";
+        readonly name: "paused";
+        readonly stateMutability: "view";
+        readonly inputs: readonly [];
+        readonly outputs: readonly [{
+            readonly type: "bool";
+        }];
+    }];
+    readonly erc20Approval: readonly [{
+        readonly type: "function";
+        readonly name: "approve";
+        readonly stateMutability: "nonpayable";
+        readonly inputs: readonly [{
+            readonly name: "spender";
+            readonly type: "address";
+        }, {
+            readonly name: "amount";
+            readonly type: "uint256";
+        }];
+        readonly outputs: readonly [{
+            readonly type: "bool";
+        }];
+    }, {
+        readonly type: "function";
+        readonly name: "allowance";
+        readonly stateMutability: "view";
+        readonly inputs: readonly [{
+            readonly name: "owner";
+            readonly type: "address";
+        }, {
+            readonly name: "spender";
+            readonly type: "address";
+        }];
+        readonly outputs: readonly [{
+            readonly type: "uint256";
+        }];
+    }, {
+        readonly type: "function";
+        readonly name: "decimals";
+        readonly stateMutability: "view";
+        readonly inputs: readonly [];
+        readonly outputs: readonly [{
+            readonly type: "uint8";
         }];
     }];
 };

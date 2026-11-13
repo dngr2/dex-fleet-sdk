@@ -203,6 +203,54 @@ export declare function markPaidRegistry(a: {
     paymentId: Hex;
     amount: bigint;
 }): CallData;
+/**
+ * Max-uint256 — what "unlimited" means to every ERC-20 on earth. Named rather than written inline so
+ * an integrator can see the one place the sentinel lives; the site forks each hand-rolled
+ * `2n**256n-1n` in a page and drifted.
+ */
+export declare const UNLIMITED: bigint;
+/**
+ * ERC-20 `approve(spender, amount)` — the general form. Prefer `approveExact` when the amount is
+ * known; the difference is not cosmetic. An unlimited allowance is a standing grant that survives
+ * the transaction: if the spender is ever re-pointed at a worse contract, the old budget is still
+ * spendable. An exact allowance self-expires (the pull consumes it).
+ *
+ * USDT-style tokens (and the canonical `transferFrom` reverting-on-nonzero-change variants) require
+ * the allowance be reset to 0 before it can be changed — `revokeApproval()` then `approve()`, two
+ * calls. The fleet's own rails are all standard ERC-20/`SafeERC20`, so one call suffices on them.
+ */
+export declare function approve(a: {
+    token: Address;
+    spender: Address;
+    amount: bigint;
+}): CallData;
+/** Approve exactly `amount` — the default for a one-shot pull (see the reset caveat on `approve`). */
+export declare function approveExact(a: {
+    token: Address;
+    spender: Address;
+    amount: bigint;
+}): CallData;
+/** Approve `UNLIMITED` (max uint256) — one tx to cover a reel of pulls. */
+export declare function approveUnlimited(a: {
+    token: Address;
+    spender: Address;
+}): CallData;
+/**
+ * Revoke — `approve(spender, 0)`. The head of every "revoke approvals" flow: a `StreamFactory`
+ * mandate's allowance half is NOT cleared by `disarmMandate()`, so a mandate the payer no longer
+ * wants still leaves the factory able to pull the outstanding laps' worth. Disarm the mandate AND
+ * revoke the allowance; this builder is the second half.
+ */
+export declare function revokeApproval(a: {
+    token: Address;
+    spender: Address;
+}): CallData;
+/** ERC-20 `allowance(owner, spender)` — read call. Check before spending a tx on a redundant revoke. */
+export declare function allowance(a: {
+    token: Address;
+    owner: Address;
+    spender: Address;
+}): CallData;
 /** FleetExecutor.execute(calls, nonce, deadline, sig) — EIP-712 signed batch. */
 export declare function batch(a: {
     executor: Address;

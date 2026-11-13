@@ -26,7 +26,12 @@ Verified output (Base, 2026-11-10): hero → `feeBps=500`, `predict` → `0x7AEa
 live, (2) reproduces the toll client-side via `quoteLive`, (3) encodes `pay`, (4) `simulate`s it.
 
 Per-surface: `quote` `pay` `createLink` `createEscrow` `release` `setMandate` `executeLap` `swap`
-`sweep` `verify402`. `_shared.ts` holds the client + fixtures.
+`sweep` `verify402` `approvals`. `_shared.ts` holds the client + fixtures.
+
+`approvals.ts` is the allowance half of every pull-based surface: it reads `feeRecipient()` and
+`paused()` live off the factory (the first is SDK-2 — never a stored constant — the second SDK-4),
+then prints the exact / unlimited / revoke calldata side by side. The revoke row is the one the site
+forks hand-rolled.
 
 Note `quote.ts` exercises the FROZEN `quote()` and *fails gracefully* — the live v1 rails don't deploy
 it yet (see the README FROZEN-vs-LIVE dated-promise table; v2 deploys it — the hero snippets use the

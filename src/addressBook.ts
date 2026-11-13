@@ -10,6 +10,13 @@ import { getAddress, isAddress } from "viem";
 import type { Address, ChainKey } from "./types.js";
 import { SdkError } from "./types.js";
 
+/**
+ * Whether a chain block is the current line or the superseded one.
+ *
+ * `v1-paused` does not mean "callable but slow" — every one of those v1 registries answers
+ * `paused()==true`, so its CREATE verbs revert `Paused()`. Settlement against an already-created
+ * child is still fine. A builder that wires NEW business at `v1-paused` is the bug this field names.
+ */
 export interface RailAddresses {
   paymentRail?: Address;
   escrowRail?: Address;
@@ -22,12 +29,27 @@ export interface RailAddresses {
   x402Facilitator?: Address;
   fleetPaymaster?: Address;
   tollRegistry?: Address;
+  /** `live` (current line) or `v1-paused` (deployed, brake on — see addresses.json `$note_status`). */
+  status?: ChainStatus;
+  /**
+   * Present only on a hand-built book. The shipped `addresses.json` carries NO `feeRecipient`:
+   * it is live state read off each factory (`readFeeRecipient` in ./client.js), never a constant (SDK-2).
+   */
   feeRecipient?: Address;
   /** Base-only v2 line (see addresses.json `$note_v2_base_only`): same field names, next generation. */
   v2?: RailAddresses;
   /** Source citation string (not an address). */
   source?: string;
 }
+
+/**
+ * Whether a chain block is the current line or the superseded one.
+ *
+ * `v1-paused` does not mean "callable but slow" — every one of those v1 registries answers
+ * `paused()==true`, so its CREATE verbs revert `Paused()`. Settlement against an already-created
+ * child is still fine. A builder that wires NEW business at `v1-paused` is the bug this field names.
+ */
+export type ChainStatus = "live" | "v1-paused";
 
 export interface AddressBook {
   [chain: string]: RailAddresses;
@@ -56,11 +78,18 @@ function parseRails(rails: Record<string, unknown>, chain: string): RailAddresse
       continue;
     }
     if (typeof val !== "string") continue;
-    // `source` is free text; `native`/`chainId`-adjacent are not keys we keep here. Only a 0x-40hex
-    // string is checksummed AND EIP-55-verified; anything else is carried through as-is.
-    out[key as keyof RailAddresses] = /^0x[0-9a-fA-F]{40}$/.test(val)
+    // `source` is free text and `status` is an enum; only a 0x-40hex string is checksummed AND
+    // EIP-55-verified, everything else is carried through as-is.
+    if (key === "status") {
+      if (val !== "live" && val !== "v1-paused") throw new SdkError(`${chain}.status: "${val}" is not live|v1-paused`);
+      out.status = val;
+      continue;
+    }
+    // `keyof RailAddresses` is a union (address | status | v2 | source); writing through the union
+    // index needs a widened view, the runtime assignment is the same either way.
+    (out as Record<string, unknown>)[key] = /^0x[0-9a-fA-F]{40}$/.test(val)
       ? checksum(val, `${chain}.${key}`)
-      : (val as Address);
+      : val;
   }
   return out;
 }
@@ -98,6 +127,8 @@ export function checksum(addr: string, where = "address"): Address {
 export interface AddressBookLike {
   readonly book: AddressBook;
   rail(chain: ChainKey, name: keyof RailAddresses): Address;
+  /** The recorded line for a chain ("live" | "v1-paused"), or undefined if the book omits it. */
+  status(chain: ChainKey): ChainStatus | undefined;
 }
 
 /**
@@ -112,6 +143,9 @@ export function addressBook(raw: unknown): AddressBookLike {
       const hit = book[chain]?.[name];
       if (!hit) throw new SdkError(`addresses.json: no ${name} on chain "${chain}"`);
       return hit as Address;
+    },
+    status(chain) {
+      return book[chain]?.status;
     },
   };
 }

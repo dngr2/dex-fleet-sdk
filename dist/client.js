@@ -5,7 +5,8 @@
  */
 import { createPublicClient, createWalletClient, http, toFunctionSelector } from "viem";
 import { base, optimism, arbitrum } from "viem/chains";
-import { NotDeployed, SdkError } from "./types.js";
+import { NotDeployed, Paused, SdkError } from "./types.js";
+import { factoryAdminAbi } from "./abi.js";
 const VIEM_CHAINS = { base, optimism, arbitrum };
 export function chainFor(key) {
     const c = VIEM_CHAINS[key];
@@ -47,7 +48,7 @@ export async function simulate(client, args) {
 /**
  * supports — runtime capability check for a (address, abi, fn) triple, cached per client+chain.
  *
- * WHY THIS EXISTS (SDK-1): the v2 builders (`pay`, `quote`, `createFor`, mandate verbs) encode
+ * WHY THIS EXISTS: the v2 builders (`pay`, `quote`, `createFor`, mandate verbs) encode
  * selectors whose TARGET is a v2 address. Pointed at a v1 address, or a chain where the rail was
  * never deployed, the builder still produces valid calldata that REVERTS on-chain — a silent trap
  * for a dev copy-pasting. `supports()` proves, before a send, that
@@ -55,14 +56,17 @@ export async function simulate(client, args) {
  *   (b) the runtime dispatches the function's selector (PUSH4 scan over the deployed bytecode).
  * Both are cached: one `eth_getCode` per address per client, so a loop over N selects is 1 RPC.
  *
+ * This answers "is the FUNCTION there", nothing more. A selector can be present and the factory
+ * still shut to new business — `capability()` / `canSend()` add the `paused()` read (SDK-4). Use
+ * those for a go/no-go; `supports()` is the half that costs one cached getCode.
+ *
  * NOT a call-simulation: a function can exist yet revert on args (that is `simulate`'s job). This
  * only separates "wrong address / not deployed" from "would work". Selector presence via bytecode
  * scan is heuristic (a 4-byte constant can coincide) but a false POSITIVE still gets caught by the
  * following simulate; a false NEGATIVE only happens for a selector split across PUSH boundaries.
  */
 export async function supports(client, args) {
-    const selector = toFunctionSelector(args.abi.find((f) => f.type === "function" && f.name === args.fn));
-    return supportsSelector(client, args.to, selector);
+    return supportsSelector(client, args.to, selectorFor(args.abi, args.fn));
 }
 export async function supportsSelector(client, to, selector) {
     const code = await getCodeCached(client, to);
@@ -70,6 +74,100 @@ export async function supportsSelector(client, to, selector) {
         return false;
     // selector is 0x + 8 hex; the runtime holds it as a 4-byte constant (PUSH4). Match the bare bytes.
     return code.toLowerCase().includes(selector.slice(2).toLowerCase());
+}
+const PAUSED_SELECTOR = "0x5c975abb";
+const FEE_RECIPIENT_SELECTOR = "0x46904840";
+/**
+ * Resolve `fn` against an ABI fragment, or throw a named error.
+ *
+ * WHY: `toFunctionSelector(undefined)` throws a bare `Cannot read properties of undefined (reading
+ * 'type')` from inside abitype — useless when the real bug is "you typed the name wrong / the
+ * fragment has a different signature". This also catches the overload case rather than silently
+ * pinning whichever member `find` hits first.
+ */
+function selectorFor(abi, fn) {
+    const hits = abi.filter((f) => f.type === "function" && f.name === fn);
+    if (hits.length === 0)
+        throw new SdkError(`fn "${fn}" not in the supplied abi`);
+    if (hits.length > 1)
+        throw new SdkError(`fn "${fn}" is overloaded in the supplied abi — pass one fragment`);
+    return toFunctionSelector(hits[0]);
+}
+/**
+ * capability — the full verdict for a (address, abi, fn) triple. Throws (SdkError) only when the RPC
+ * itself dies (or `fn` is absent from the abi); absence and pause are values, not exceptions, so a
+ * caller can branch on them.
+ */
+export async function capability(client, args) {
+    const selector = selectorFor(args.abi, args.fn);
+    if (!(await supportsSelector(client, args.to, selector))) {
+        return { state: "not-deployed", to: args.to, selector, ok: false };
+    }
+    if (await isPaused(client, args.to)) {
+        return { state: "paused", to: args.to, selector, ok: false };
+    }
+    return { state: "ready", to: args.to, selector, ok: true };
+}
+/**
+ * Read the treasury off a factory — `factory.feeRecipient()`. This is the replacement for any copied
+ * `feeRecipient` constant (SDK-2). The live vaults/escrows pay THIS value at settlement, and the new
+ * line moves it behind a 48h staged timelock, so a fixtures copy is stale the moment an owner stages
+ * a re-point — with no compile error and no test failure to tell you.
+ *
+ * Two-RPC note for a one-off check: this reads whichever transport the client was built with. A
+ * failover transport is the honest way to use it for a verdict; `getCodeCached` + `paused()` share
+ * the same rule (a dead read is an error, never a zero-address answer).
+ */
+export async function readFeeRecipient(client, factory) {
+    if (!(await supportsSelector(client, factory, FEE_RECIPIENT_SELECTOR))) {
+        throw new NotDeployed(factory, FEE_RECIPIENT_SELECTOR, "fn feeRecipient not dispatched");
+    }
+    try {
+        return await client.publicClient.readContract({
+            address: factory,
+            abi: factoryAdminAbi,
+            functionName: "feeRecipient",
+        });
+    }
+    catch (e) {
+        throw new SdkError(`feeRecipient() read failed for ${factory} (dead RPC?): ${e.message}`, e);
+    }
+}
+/** `capability(...)` collapsed to the boolean "may I send now?" (paused reads as false). */
+export async function canSend(client, args) {
+    return (await capability(client, args)).state === "ready";
+}
+/**
+ * Read `paused()` off a target — cached per client. Returns `false` for a non-factory (no selector) so
+ * only factories pay the extra `eth_call`, and one call per address per client covers a whole flow.
+ * A dead RPC propagates as SdkError, never as a fabricated `false`.
+ */
+const _pausedCache = new WeakMap();
+export async function isPaused(client, to) {
+    const code = await getCodeCached(client, to);
+    if (code.length <= 2 || !code.toLowerCase().includes(PAUSED_SELECTOR.slice(2)))
+        return false;
+    let m = _pausedCache.get(client);
+    if (!m) {
+        m = new Map();
+        _pausedCache.set(client, m);
+    }
+    const key = to.toLowerCase();
+    const hit = m.get(key);
+    if (hit !== undefined)
+        return hit;
+    try {
+        const paused = await client.publicClient.readContract({
+            address: to,
+            abi: factoryAdminAbi,
+            functionName: "paused",
+        });
+        m.set(key, paused);
+        return paused;
+    }
+    catch (e) {
+        throw new SdkError(`paused() read failed for ${to} (dead RPC?): ${e.message}`, e);
+    }
 }
 /** Cache `eth_getCode` per (chainId,address); a dead RPC is an ERROR, never a silent `0x`. */
 const _codeCache = new WeakMap();
@@ -95,11 +193,27 @@ export async function getCodeCached(client, to) {
 /**
  * assertSupports — throw `NotDeployed` when (to, fn) is absent. Use before a v2 send so the failure
  * names the real cause (wrong generation / wrong chain) instead of an opaque revert.
+ *
+ * Code/selector only. For a factory CREATE the pause matters as much as the address: use
+ * `assertCanSend` when you are about to make something new.
  */
 export async function assertSupports(client, args) {
-    if (!(await supports(client, args))) {
-        const selector = toFunctionSelector(args.abi.find((f) => f.type === "function" && f.name === args.fn));
+    const selector = selectorFor(args.abi, args.fn);
+    if (!(await supportsSelector(client, args.to, selector))) {
         throw new NotDeployed(args.to, selector, `fn ${args.fn} not dispatched`);
     }
+}
+/**
+ * assertCanSend — `assertSupports` plus the brake: throws `NotDeployed` when the target is wrong and
+ * `Paused` when it is right but shut. The two are different bugs for the caller (fix the address vs
+ * wait/re-route), so they are different exceptions. Same RPC-fault rule as the rest: a dead read
+ * propagates rather than passing for either.
+ */
+export async function assertCanSend(client, args) {
+    const cap = await capability(client, args);
+    if (cap.state === "not-deployed")
+        throw new NotDeployed(args.to, cap.selector, `fn ${args.fn} not dispatched`);
+    if (cap.state === "paused")
+        throw new Paused(args.to, `fn ${args.fn} refused while paused`);
 }
 //# sourceMappingURL=client.js.map

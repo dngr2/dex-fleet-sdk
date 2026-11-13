@@ -1,0 +1,105 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SUPPORTED_CHAINS = void 0;
+exports.parseAddressBook = parseAddressBook;
+exports.checksum = checksum;
+exports.addressBook = addressBook;
+/**
+ * addressBook — read the fleet's contract addresses from `addresses.json`.
+ *
+ * The SDK never hard-codes a live address in code: it reads the same JSON the deploy/receipt
+ * docs cite, so an address is provably the one from source (GOTCHA #73/#181: verify the
+ * address from a file + checksum/length, never retype). `resolve()` checksums via viem and
+ * throws on a malformed entry rather than passing a bad address downstream.
+ */
+const viem_1 = require("viem");
+const types_js_1 = require("./types.js");
+/** The rails live on these chains (a subset of ChainKey); others resolve per-entry. */
+exports.SUPPORTED_CHAINS = ["base", "optimism", "arbitrum"];
+function parseAddressBook(raw) {
+    if (typeof raw !== "object" || raw === null)
+        throw new types_js_1.SdkError("addresses.json: not an object");
+    const book = {};
+    for (const [chain, rails] of Object.entries(raw)) {
+        if (chain.startsWith("$"))
+            continue;
+        if (typeof rails !== "object" || rails === null)
+            throw new types_js_1.SdkError(`addresses.json: chain "${chain}" is not an object`);
+        book[chain] = parseRails(rails, chain);
+    }
+    return book;
+}
+/** Parse one chain's rail set. A nested `v2` object is recursed (the Base-only v2 line). */
+function parseRails(rails, chain) {
+    const out = {};
+    for (const [key, val] of Object.entries(rails)) {
+        if (key === "v2" && typeof val === "object" && val !== null) {
+            out.v2 = parseRails(val, `${chain}.v2`);
+            continue;
+        }
+        if (typeof val !== "string")
+            continue;
+        // `source` is free text and `status` is an enum; only a 0x-40hex string is checksummed AND
+        // EIP-55-verified, everything else is carried through as-is.
+        if (key === "status") {
+            if (val !== "live" && val !== "v1-paused")
+                throw new types_js_1.SdkError(`${chain}.status: "${val}" is not live|v1-paused`);
+            out.status = val;
+            continue;
+        }
+        // `keyof RailAddresses` is a union (address | status | v2 | source); writing through the union
+        // index needs a widened view, the runtime assignment is the same either way.
+        out[key] = /^0x[0-9a-fA-F]{40}$/.test(val)
+            ? checksum(val, `${chain}.${key}`)
+            : val;
+    }
+    return out;
+}
+/**
+ * Checksum-check an address string; throw (with context) on a bad one.
+ *
+ * WHY the two extra steps: viem's `getAddress` NORMALISES any-case input (it lowercases then
+ * re-checksums), so a mistyped MIXED-case address round-trips silently — `getAddress("0xAbC…")`
+ * never throws and the "EIP-55 check" proves nothing. We:
+ *   1. require a well-formed 20-byte hex string,
+ *   2. run `isAddress(x, { strict: true })` (viem's own strict gate),
+ *   3. if the input is MIXED-case, require `getAddress(x) === x` — i.e. the input ALREADY carries a
+ *      valid checksum. All-lower / all-upper input is accepted (no checksum to contradict).
+ */
+function checksum(addr, where = "address") {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) {
+        throw new types_js_1.SdkError(`${where}: "${addr}" is not a 20-byte hex address (len ${addr.length})`);
+    }
+    if (!(0, viem_1.isAddress)(addr, { strict: true })) {
+        throw new types_js_1.SdkError(`${where}: "${addr}" fails EIP-55 checksum`);
+    }
+    const hasUpper = /[A-F]/.test(addr.slice(2));
+    const hasLower = /[a-f]/.test(addr.slice(2));
+    if (hasUpper && hasLower) {
+        const canonical = (0, viem_1.getAddress)(addr);
+        if (canonical !== addr) {
+            throw new types_js_1.SdkError(`${where}: "${addr}" has a CORRUPTED EIP-55 checksum — canonical is ${canonical}`);
+        }
+        return canonical;
+    }
+    return (0, viem_1.getAddress)(addr);
+}
+/**
+ * Build a reader over a parsed book. Import the JSON with your bundler
+ * (`import raw from "../addresses.json"`) and pass it here.
+ */
+function addressBook(raw) {
+    const book = parseAddressBook(raw);
+    return {
+        book,
+        rail(chain, name) {
+            const hit = book[chain]?.[name];
+            if (!hit)
+                throw new types_js_1.SdkError(`addresses.json: no ${name} on chain "${chain}"`);
+            return hit;
+        },
+        status(chain) {
+            return book[chain]?.status;
+        },
+    };
+}

@@ -33,8 +33,16 @@ function parseRails(rails, chain) {
         }
         if (typeof val !== "string")
             continue;
-        // `source` is free text; `native`/`chainId`-adjacent are not keys we keep here. Only a 0x-40hex
-        // string is checksummed AND EIP-55-verified; anything else is carried through as-is.
+        // `source` is free text and `status` is an enum; only a 0x-40hex string is checksummed AND
+        // EIP-55-verified, everything else is carried through as-is.
+        if (key === "status") {
+            if (val !== "live" && val !== "v1-paused")
+                throw new SdkError(`${chain}.status: "${val}" is not live|v1-paused`);
+            out.status = val;
+            continue;
+        }
+        // `keyof RailAddresses` is a union (address | status | v2 | source); writing through the union
+        // index needs a widened view, the runtime assignment is the same either way.
         out[key] = /^0x[0-9a-fA-F]{40}$/.test(val)
             ? checksum(val, `${chain}.${key}`)
             : val;
@@ -83,6 +91,9 @@ export function addressBook(raw) {
             if (!hit)
                 throw new SdkError(`addresses.json: no ${name} on chain "${chain}"`);
             return hit;
+        },
+        status(chain) {
+            return book[chain]?.status;
         },
     };
 }

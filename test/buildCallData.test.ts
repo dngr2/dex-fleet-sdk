@@ -79,6 +79,37 @@ describe("selectors (pinned via cast sig)", () => {
   it("predictDepositFor → 0xd6d52f00 (matches payme SEL.predict)", () => {
     expect(sel(b.predictDepositFor({ registry: RAIL, destination: ME }))).toBe("0xd6d52f00");
   });
+
+  // --- approvals (SDK-3): ERC-20 selectors, independent of any rail ---------------------------
+  it("approve → 0x095ea7b3", () => {
+    expect(sel(b.approve({ token: RAIL, spender: ME, amount: 7n }))).toBe("0x095ea7b3");
+  });
+  it("approveExact is the same wire call as approve, and approval goes to the TOKEN", () => {
+    const exact = b.approveExact({ token: RAIL, spender: ME, amount: 7n });
+    expect(exact).toEqual(b.approve({ token: RAIL, spender: ME, amount: 7n }));
+    expect(exact.to).toBe(RAIL); // `to` is the token; `spender` is in the args
+  });
+  it("approveUnlimited encodes max uint256, not a literal", () => {
+    const cd = b.approveUnlimited({ token: RAIL, spender: ME });
+    expect(sel(cd)).toBe("0x095ea7b3");
+    const [spender, amount] = decodeAbiParameters([{ type: "address" }, { type: "uint256" }], ("0x" + cd.data.slice(10)) as Hex);
+    expect(spender).toBe(ME);
+    expect(amount).toBe(2n ** 256n - 1n);
+    expect(b.UNLIMITED).toBe(2n ** 256n - 1n);
+  });
+  it("revokeApproval encodes amount 0 — the reset half of a USDT-style re-approve", () => {
+    const cd = b.revokeApproval({ token: RAIL, spender: ME });
+    const [, amount] = decodeAbiParameters([{ type: "address" }, { type: "uint256" }], ("0x" + cd.data.slice(10)) as Hex);
+    expect(sel(cd)).toBe("0x095ea7b3");
+    expect(amount).toBe(0n);
+  });
+  it("allowance → 0xdd62ed3e, and its tail is (owner, spender) in that order", () => {
+    const cd = b.allowance({ token: RAIL, owner: ME, spender: ZERO });
+    expect(sel(cd)).toBe("0xdd62ed3e");
+    const [owner, spender] = decodeAbiParameters([{ type: "address" }, { type: "address" }], ("0x" + cd.data.slice(10)) as Hex);
+    expect(owner).toBe(ME);
+    expect(spender).toBe(ZERO);
+  });
   it("batch (FleetExecutor.execute) → 0x74b506ec", () => {
     const cd = b.batch({ executor: RAIL, calls: [{ target: ME, value: 0n, data: "0x" }], nonce: 1n, deadline: 2n, sig: "0x" });
     expect(sel(cd)).toBe("0x74b506ec");
@@ -206,5 +237,44 @@ describe("addressBook", () => {
     const V2 = getAddress("0x417c41d406c61E09958032Cd77338fc1F1ac7D45");
     const book = addressBook({ base: { paymentRail: RAIL, v2: { paymentRail: V2 } } });
     expect(book.book.base?.v2?.paymentRail).toBe(V2);
+  });
+
+  // --- SDK-1: the recorded line, so a builder can refuse new business at a paused forest --------
+  it("carries `status` through, and status() reports it", async () => {
+    const { addressBook } = await import("../src/addressBook.js");
+    const book = addressBook({
+      base: { paymentRail: RAIL, status: "live" },
+      arbitrum: { paymentRail: RAIL, status: "v1-paused" },
+    });
+    expect(book.status("base")).toBe("live");
+    expect(book.status("arbitrum")).toBe("v1-paused");
+    // @ts-expect-error — off-book chain
+    expect(book.status("nope")).toBeUndefined();
+  });
+
+  it("a status that is not live|v1-paused fails the parse rather than being carried as an address", async () => {
+    const { addressBook } = await import("../src/addressBook.js");
+    expect(() => addressBook({ base: { status: "paused-ish" } })).toThrow(/live\|v1-paused/);
+  });
+
+  // --- the SHIPPED book: these are the two defects, asserted against the real file -------------
+  it("the shipped addresses.json: 3 live chains, 8 v1-paused, and no stored feeRecipient", async () => {
+    const { addressBook } = await import("../src/addressBook.js");
+    const raw = (await import("../addresses.json", { with: { type: "json" } })).default;
+    const book = addressBook(raw);
+    const chains = Object.keys(book.book);
+    expect(chains.filter((c) => book.status(c as never) === "live").sort()).toEqual(["base", "optimism", "unichain"]);
+    expect(chains.filter((c) => book.status(c as never) === "v1-paused")).toHaveLength(8);
+    for (const c of chains) expect(book.book[c]?.feeRecipient).toBeUndefined();
+    // every row still checksums (a stripped field must not have disturbed the address parse)
+    expect(book.rail("base", "paymentRail")).toBe(RAIL);
+  });
+
+  // --- SDK-2: feeRecipient is live state, not a book constant ---------------------------------
+  it("a chain block with no feeRecipient resolves none, so a stale copy cannot be read", async () => {
+    const { addressBook } = await import("../src/addressBook.js");
+    const book = addressBook({ base: { paymentRail: RAIL } });
+    expect(book.book.base?.feeRecipient).toBeUndefined();
+    expect(() => book.rail("base", "feeRecipient")).toThrow(/no feeRecipient/);
   });
 });

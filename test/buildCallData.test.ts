@@ -271,6 +271,22 @@ describe("addressBook", () => {
   });
 
   // --- SDK-2: feeRecipient is live state, not a book constant ---------------------------------
+  it("SUPPORTED_CHAINS is derived from status, not a literal — arbitrum falls out", async () => {
+    const { addressBook } = await import("../src/addressBook.js");
+    const raw = (await import("../addresses.json", { with: { type: "json" } })).default;
+    const book = addressBook(raw);
+    expect(book.supported().sort()).toEqual(["base", "optimism", "unichain"]);
+    // the old literal named arbitrum; it is a v1-paused chain and must not appear
+    expect(book.supported()).not.toContain("arbitrum");
+    // but the address is still reachable — "supported" is about new business, not reachability
+    expect(book.rail("arbitrum", "paymentRail")).toMatch(/^0xe9515881/);
+  });
+
+  it("a book with no status fields supports nothing rather than guessing", async () => {
+    const { addressBook } = await import("../src/addressBook.js");
+    expect(addressBook({ base: { paymentRail: RAIL } }).supported()).toEqual([]);
+  });
+
   it("a chain block with no feeRecipient resolves none, so a stale copy cannot be read", async () => {
     const { addressBook } = await import("../src/addressBook.js");
     const book = addressBook({ base: { paymentRail: RAIL } });

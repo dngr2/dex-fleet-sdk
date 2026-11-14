@@ -8,8 +8,22 @@
  */
 import { getAddress, isAddress } from "viem";
 import { SdkError } from "./types.js";
-/** The rails live on these chains (a subset of ChainKey); others resolve per-entry. */
-export const SUPPORTED_CHAINS = ["base", "optimism", "arbitrum"];
+/**
+ * Chains you may wire NEW business at — DERIVED from each block's `status`, never a literal (SDK-4).
+ *
+ * The old literal `["base","optimism","arbitrum"]` was a policy list that went stale the moment the
+ * v1 line was paused: arbitrum is still a valid chain and still settles, but its registry refuses
+ * creates, so calling it "supported" sent a caller exactly where SDK-1 warns about. Anything not
+ * `live` is excluded; the full set stays reachable through `book.rail()`.
+ *
+ * A hand-built book with no `status` fields yields `[]` rather than guessing — absence of the field is
+ * "unlabelled", and the book's own contract is that a chain is only `live` if something says so.
+ */
+export function supportedChains(book) {
+    return Object.entries(book)
+        .filter(([, rails]) => rails.status === "live")
+        .map(([chain]) => chain);
+}
 export function parseAddressBook(raw) {
     if (typeof raw !== "object" || raw === null)
         throw new SdkError("addresses.json: not an object");
@@ -94,6 +108,9 @@ export function addressBook(raw) {
         },
         status(chain) {
             return book[chain]?.status;
+        },
+        supported() {
+            return supportedChains(book);
         },
     };
 }

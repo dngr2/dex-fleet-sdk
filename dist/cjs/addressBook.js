@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SUPPORTED_CHAINS = void 0;
+exports.supportedChains = supportedChains;
 exports.parseAddressBook = parseAddressBook;
 exports.checksum = checksum;
 exports.addressBook = addressBook;
@@ -14,8 +14,22 @@ exports.addressBook = addressBook;
  */
 const viem_1 = require("viem");
 const types_js_1 = require("./types.js");
-/** The rails live on these chains (a subset of ChainKey); others resolve per-entry. */
-exports.SUPPORTED_CHAINS = ["base", "optimism", "arbitrum"];
+/**
+ * Chains you may wire NEW business at — DERIVED from each block's `status`, never a literal (SDK-4).
+ *
+ * The old literal `["base","optimism","arbitrum"]` was a policy list that went stale the moment the
+ * v1 line was paused: arbitrum is still a valid chain and still settles, but its registry refuses
+ * creates, so calling it "supported" sent a caller exactly where SDK-1 warns about. Anything not
+ * `live` is excluded; the full set stays reachable through `book.rail()`.
+ *
+ * A hand-built book with no `status` fields yields `[]` rather than guessing — absence of the field is
+ * "unlabelled", and the book's own contract is that a chain is only `live` if something says so.
+ */
+function supportedChains(book) {
+    return Object.entries(book)
+        .filter(([, rails]) => rails.status === "live")
+        .map(([chain]) => chain);
+}
 function parseAddressBook(raw) {
     if (typeof raw !== "object" || raw === null)
         throw new types_js_1.SdkError("addresses.json: not an object");
@@ -100,6 +114,9 @@ function addressBook(raw) {
         },
         status(chain) {
             return book[chain]?.status;
+        },
+        supported() {
+            return supportedChains(book);
         },
     };
 }

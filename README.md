@@ -98,7 +98,7 @@ Probed live on Base, re-dated **2026-11-13** (runtime selector scan on both the 
 | `quote(token,amount)` | yes | **NO** — `8f79306e` absent from runtime, call reverts | **NO** — still absent, still reverts |
 | `minFee()` (no-arg) | — | **NO** | **YES** — `24ec7590` live, returns `0` (also on g2a/g2b new-line rails) |
 | `minFee(token)` (frozen sig) | yes | **NO** | **NO** — `5c9edb87` absent; the deployed getter takes no argument |
-| `paused()` (**state**, not a member) | — | **TRUE** (brake on, creates revert) | false |
+| `paused()` (**state**, not a member) | — | **TRUE** (brake on, `supports()` false) | false |
 
 **The two `NO` rows are the frozen wave's surface, not a permanent caveat** — but note the shape
 drift: `abi.ts` declares `minFee(token)`, while what actually deployed is a bare `minFee()`. A call
@@ -204,9 +204,9 @@ book.status("arbitrum");  // "v1-paused"
 
 Correct the status with a live `paused()` read — never by editing the file's guess.
 
-### `feeRecipient` is NOT in this file (SDK-2)
+### `feeRecipient` is NOT in this file (SDK-2 — a consequence of SDK-1)
 
-The treasury moves (48h staged timelock on the new line), and every vault/escrow pays
+The field's *absence* is not the defect; the v1 railing is (previous section). But the treasury also moves (48h staged timelock on the new line), and every vault/escrow pays
 `factory.feeRecipient()` at settlement — so a stored copy goes stale with no error anywhere. Read it:
 
 ```ts
@@ -219,12 +219,19 @@ Both lines today: new line (base/op/unichain) `0x5c0fc091…d2Ef3c`, every v1 ch
 
 ### Guarding a send: `capability` / `canSend` / `assertCanSend` (SDK-4)
 
-`supports()` answers only "is the FUNCTION dispatched" — a paused factory passes it. `capability()`
-adds the brake and returns `ready` | `paused` | `not-deployed`; a dead RPC **throws** rather than
-answering either way (#138). `assertCanSend()` throws `Paused` (right address, shut) or `NotDeployed`
-(wrong address/generation) — different bugs, different exceptions.
+`supports()` is the go/no-go and answers **false for a paused rail** — the selector being present did
+not help anyone sent to a v1 registry. `isDispatched()` is the deployment-only half; `capability()`
+returns `ready` | `paused` | `not-deployed` when you need to know *which* gate failed, and throws on a
+dead RPC rather than answering either way (#138). `assertCanSend()` throws `Paused` (right address,
+shut) or `NotDeployed` (wrong address/generation) — different bugs, different exceptions.
+
+`book.supported()` is derived from `status` (`["base","optimism","unichain"]` today), so it cannot go
+stale the way the old `SUPPORTED_CHAINS` literal did by still naming arbitrum. `book.rail()` still
+resolves a paused chain — "supported" is about new business, not reachability.
 
 ```ts
-const cap = await capability(client, { to: factory, abi: streamFactoryLiveAbi, fn: "setMandate" });
-if (cap.state === "paused") await waitForOpen();      // the address was fine; the brake is on
+if (!(await supports(client, { to: factory, abi: streamFactoryLiveAbi, fn: "setMandate" }))) {
+  const cap = await capability(client, { to: factory, abi: streamFactoryLiveAbi, fn: "setMandate" });
+  if (cap.state === "paused") await waitForOpen();    // the address was fine; the brake is on
+}
 ```

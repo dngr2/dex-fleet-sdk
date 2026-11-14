@@ -4,10 +4,16 @@
  * builder can be unit-tested with no RPC at all.
  */
 import { createPublicClient, createWalletClient, http, toFunctionSelector } from "viem";
-import { base, optimism, arbitrum } from "viem/chains";
+import { base, optimism, arbitrum, polygon, bsc, gnosis, mantle, scroll, linea, opBNB, unichain } from "viem/chains";
 import { NotDeployed, Paused, SdkError } from "./types.js";
 import { factoryAdminAbi } from "./abi.js";
-const VIEM_CHAINS = { base, optimism, arbitrum };
+/**
+ * Every chain the book knows. Not a policy list: `supportedChains()` (addressBook.ts) is DERIVED from
+ * the book's `status` fields, because "supported" means "you may wire new business here" and that is
+ * exactly what `status: v1-paused` denies (SDK-4). A literal here went stale the moment the v1 line
+ * was paused — it still named arbitrum.
+ */
+const VIEM_CHAINS = { base, optimism, arbitrum, polygon, bsc, gnosis, mantle, scroll, linea, opBNB, unichain };
 export function chainFor(key) {
     const c = VIEM_CHAINS[key];
     if (!c)
@@ -46,26 +52,35 @@ export async function simulate(client, args) {
     }
 }
 /**
- * supports — runtime capability check for a (address, abi, fn) triple, cached per client+chain.
+ * supports — "can I send this right now?" for a (address, abi, fn) triple.
  *
- * WHY THIS EXISTS: the v2 builders (`pay`, `quote`, `createFor`, mandate verbs) encode
- * selectors whose TARGET is a v2 address. Pointed at a v1 address, or a chain where the rail was
- * never deployed, the builder still produces valid calldata that REVERTS on-chain — a silent trap
- * for a dev copy-pasting. `supports()` proves, before a send, that
- *   (a) the target holds code (`eth_getCode` != `0x`), and
- *   (b) the runtime dispatches the function's selector (PUSH4 scan over the deployed bytecode).
- * Both are cached: one `eth_getCode` per address per client, so a loop over N selects is 1 RPC.
+ * TWO gates, both cached per client+address, one `eth_getCode` each:
+ *   (a) the target holds code (`eth_getCode` != `0x`) and dispatches the function's selector
+ *       (PUSH4 scan over the deployed bytecode), and
+ *   (b) its `paused()` brake — if the target has one — is OFF (SDK-4).
  *
- * This answers "is the FUNCTION there", nothing more. A selector can be present and the factory
- * still shut to new business — `capability()` / `canSend()` add the `paused()` read (SDK-4). Use
- * those for a go/no-go; `supports()` is the half that costs one cached getCode.
+ * (b) is not decoration. `supports()` proved code+selector and returned TRUE for the whole paused v1
+ * line: every v1 registry still dispatches `register`, so a caller that gated on `supports()` was
+ * waved onto a factory that reverts `Paused()`. The function being PRESENT is not the same as the
+ * rail being OPEN, and the boolean form is used as a go/no-go, so it must answer the go/no-go.
  *
- * NOT a call-simulation: a function can exist yet revert on args (that is `simulate`'s job). This
- * only separates "wrong address / not deployed" from "would work". Selector presence via bytecode
- * scan is heuristic (a 4-byte constant can coincide) but a false POSITIVE still gets caught by the
- * following simulate; a false NEGATIVE only happens for a selector split across PUSH boundaries.
+ * The raw half is `supportsSelector` (code+selector only, no pause read) — use it when the question
+ * really is "is this member deployed", e.g. checking an ABI against a runtime. `capability()` keeps
+ * the three states distinguishable when a caller needs to know WHICH gate failed.
+ *
+ * NOT a call-simulation: a function can exist, be unpaused, and still revert on args (that is
+ * `simulate`'s job). Selector presence via bytecode scan is heuristic (a 4-byte constant can
+ * coincide) but a false POSITIVE still gets caught by the following simulate; a false NEGATIVE only
+ * happens for a selector split across PUSH boundaries.
  */
 export async function supports(client, args) {
+    const selector = selectorFor(args.abi, args.fn);
+    if (!(await supportsSelector(client, args.to, selector)))
+        return false;
+    return !(await isPaused(client, args.to));
+}
+/** Code + selector only — the pre-SDK-4 answer, with no `paused()` read. */
+export async function isDispatched(client, args) {
     return supportsSelector(client, args.to, selectorFor(args.abi, args.fn));
 }
 export async function supportsSelector(client, to, selector) {
@@ -191,11 +206,8 @@ export async function getCodeCached(client, to) {
     }
 }
 /**
- * assertSupports — throw `NotDeployed` when (to, fn) is absent. Use before a v2 send so the failure
- * names the real cause (wrong generation / wrong chain) instead of an opaque revert.
- *
- * Code/selector only. For a factory CREATE the pause matters as much as the address: use
- * `assertCanSend` when you are about to make something new.
+ * assertSupports — throw `NotDeployed` when (to, fn) is absent. Deployment only: a paused-but-present
+ * target PASSES, so a caller that wants the brake checked wants `assertCanSend`.
  */
 export async function assertSupports(client, args) {
     const selector = selectorFor(args.abi, args.fn);

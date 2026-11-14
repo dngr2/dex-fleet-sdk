@@ -4,7 +4,7 @@
  * and an absent selector: `not-deployed`; a dead endpoint: throw) — this file pins the LOGIC.
  */
 import { describe, it, expect, vi } from "vitest";
-import { capability, canSend, assertCanSend, isPaused, readFeeRecipient, supports } from "../src/client.js";
+import { capability, canSend, assertCanSend, isPaused, readFeeRecipient, supports, isDispatched } from "../src/client.js";
 import { factoryAdminAbi } from "../src/abi.js";
 import { NotDeployed, Paused, SdkError } from "../src/types.js";
 import type { Address, Hex } from "../src/types.js";
@@ -68,6 +68,18 @@ describe("capability", () => {
 
   it("a fn that is not in the abi names itself instead of crashing inside abitype", async () => {
     await expect(supports(fake({}), { to: TARGET, abi: factoryAdminAbi, fn: "nope" })).rejects.toThrow(/not in the supplied abi/);
+  });
+
+  it("supports() is FALSE for a paused rail — the whole SDK-1 line (SDK-4 marker)", async () => {
+    // the selector IS there; the rail is shut. The boolean go/no-go must say no.
+    expect(await supports(fake({ paused: true }), { to: TARGET, abi: factoryAdminAbi, fn: "feeRecipient" })).toBe(false);
+    // ...and the raw question still says yes, so the two are separable
+    expect(await isDispatched(fake({ paused: true }), { to: TARGET, abi: factoryAdminAbi, fn: "feeRecipient" })).toBe(true);
+  });
+
+  it("supports() is true only when deployed AND open", async () => {
+    expect(await supports(fake({}), { to: TARGET, abi: factoryAdminAbi, fn: "feeRecipient" })).toBe(true);
+    expect(await supports(fake({ code: "0x" }), { to: TARGET, abi: factoryAdminAbi, fn: "feeRecipient" })).toBe(false);
   });
 
   it("canSend is the boolean form", async () => {

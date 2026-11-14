@@ -55,8 +55,22 @@ export interface AddressBook {
   [chain: string]: RailAddresses;
 }
 
-/** The rails live on these chains (a subset of ChainKey); others resolve per-entry. */
-export const SUPPORTED_CHAINS: readonly ChainKey[] = ["base", "optimism", "arbitrum"];
+/**
+ * Chains you may wire NEW business at — DERIVED from each block's `status`, never a literal (SDK-4).
+ *
+ * The old literal `["base","optimism","arbitrum"]` was a policy list that went stale the moment the
+ * v1 line was paused: arbitrum is still a valid chain and still settles, but its registry refuses
+ * creates, so calling it "supported" sent a caller exactly where SDK-1 warns about. Anything not
+ * `live` is excluded; the full set stays reachable through `book.rail()`.
+ *
+ * A hand-built book with no `status` fields yields `[]` rather than guessing — absence of the field is
+ * "unlabelled", and the book's own contract is that a chain is only `live` if something says so.
+ */
+export function supportedChains(book: AddressBook): ChainKey[] {
+  return Object.entries(book)
+    .filter(([, rails]) => rails.status === "live")
+    .map(([chain]) => chain as ChainKey);
+}
 
 export function parseAddressBook(raw: unknown): AddressBook {
   if (typeof raw !== "object" || raw === null) throw new SdkError("addresses.json: not an object");
@@ -129,6 +143,8 @@ export interface AddressBookLike {
   rail(chain: ChainKey, name: keyof RailAddresses): Address;
   /** The recorded line for a chain ("live" | "v1-paused"), or undefined if the book omits it. */
   status(chain: ChainKey): ChainStatus | undefined;
+  /** Chains labelled `live` — derived from `status`, so it cannot go stale like a literal did. */
+  supported(): ChainKey[];
 }
 
 /**
@@ -146,6 +162,9 @@ export function addressBook(raw: unknown): AddressBookLike {
     },
     status(chain) {
       return book[chain]?.status;
+    },
+    supported() {
+      return supportedChains(book);
     },
   };
 }

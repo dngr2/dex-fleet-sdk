@@ -11,6 +11,13 @@ export interface RailAddresses {
     escrowRail?: Address;
     streamRail?: Address;
     swapRouter?: Address;
+    /**
+     * The SUPERSEDED p3 router on this chain — deployed, still answers `feeBps()`/`treasury()`, but not
+     * the line to route new work through. Base only. Pinned here so prose cannot rot on it: before the
+     * relaunch this string was the live Base router and the docs described it as a Base special case,
+     * which stopped being true the moment the new line took `swapRouter` on all three live chains.
+     */
+    swapRouterHistoric?: Address;
     settlementRegistry?: Address;
     fleetExecutor?: Address;
     requestRegistry?: Address;

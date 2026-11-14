@@ -282,6 +282,38 @@ describe("addressBook", () => {
     expect(book.rail("arbitrum", "paymentRail")).toMatch(/^0xe9515881/);
   });
 
+  // --- the p3 router's two generations (the prose that went stale, now pinned) -----------------
+  it("base carries the CURRENT p3 router and the superseded one in a slot, not only in prose", async () => {
+    const raw = (await import("../addresses.json", { with: { type: "json" } })).default;
+    const { addressBook } = await import("../src/addressBook.js");
+    const book = addressBook(raw);
+    // current line on all three live chains, same string (CREATE-invariant within a generation)
+    for (const c of ["base", "optimism", "unichain"] as const) {
+      expect(book.rail(c, "swapRouter")).toBe(getAddress("0x036645cA607Dc8075Ae9B12A3474C00A82c306e6"));
+    }
+    // the superseded Base copy is recorded as a value, so it can go red
+    expect(book.rail("base", "swapRouterHistoric")).toBe(getAddress("0xEB28D5cA0783D01dd2E4bF86AD7024ca156aB047"));
+    // ...and it is not the live one
+    expect(book.rail("base", "swapRouterHistoric")).not.toBe(book.rail("base", "swapRouter"));
+    // it is Base-only: optimism and unichain keep the v1 router in `swapRouter`, not a historic slot
+    for (const c of ["optimism", "unichain"] as const) expect(book.book[c]?.swapRouterHistoric).toBeUndefined();
+  });
+
+  it("the eight v1 chains are on the OLD router, and optimism is on the new one (no Base special case)", async () => {
+    const raw = (await import("../addresses.json", { with: { type: "json" } })).default;
+    const { addressBook } = await import("../src/addressBook.js");
+    const book = addressBook(raw);
+    const V1 = getAddress("0x9651cD591cFe33E1b684e5d8541940e78724c749");
+    for (const c of ["arbitrum", "linea", "polygon", "bsc", "opbnb", "mantle", "gnosis", "scroll"] as const) {
+      expect(book.rail(c, "swapRouter")).toBe(V1);
+      expect(book.status(c)).toBe("v1-paused");
+    }
+    // optimism shipped the new router, so "old router on all non-Base chains" is no longer true
+    expect(book.rail("optimism", "swapRouter")).toBe(getAddress("0x036645cA607Dc8075Ae9B12A3474C00A82c306e6"));
+    expect(book.rail("optimism", "swapRouter")).not.toBe(V1);
+    expect(book.status("optimism")).toBe("live");
+  });
+
   it("a book with no status fields supports nothing rather than guessing", async () => {
     const { addressBook } = await import("../src/addressBook.js");
     expect(addressBook({ base: { paymentRail: RAIL } }).supported()).toEqual([]);

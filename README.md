@@ -175,18 +175,41 @@ re-verified with `cast to-check-sum-address`. `addressBook()` validates EIP-55 s
 (`isAddress(addr,{strict:true})`) and, for a mixed-case input, requires `getAddress(addr) === addr`
 so a *corrupted* checksum is caught, not silently normalised — plus a malformed entry throws.
 
-**Multi-chain, with one honest seam.** `paymentRail` (p2) is the same CREATE address on all 10
-chains — a CREATE address is `keccak(rlp(key,nonce))[12:]`, chain-independent. `swapRouter` (p3)
-likewise recurs on 9 chains, but on **Base it is a DIFFERENT contract** at `0xEB28D5cA…`; and the
-bare string `0x9651cD59…` is the Base f1a `requestRegistry` (2772 B) *and* the p3 Router on the other
-9 chains (4270 B) — same string, different code **per chain**. Never key on a bare address without
-its chain.
+**Multi-chain, with two honest seams.** A CREATE address is `keccak(rlp(key,nonce))[12:]`, so it is
+chain-independent *within a generation* — which is exactly why the bare string means nothing without
+its chain, and why there are two generations of the p3 router on the same chains.
+
+| p3 router | where | state |
+|---|---|---|
+| `0x036645cA…` (4773 B) | base, optimism, unichain | **current** — `feeBps()` **500**, `treasury()` `0x5c0fc091…`, `p2Registry()` reverts |
+| `0x9651cD59…` (4270 B) | arbitrum, linea, polygon, bsc, opbnb, mantle, gnosis, scroll **and optimism** | **v1** — `feeBps()` **5**, `treasury()` `0xe218…`, `p2Registry()` reverts |
+| `0xEB28D5cA…` (4270 B) | **base only** — `swapRouterHistoric` | **superseded**, byte-identical to the v1 router |
+
+The one sentence that used to be here — "on Base it is a DIFFERENT contract at `0xEB28D5cA…`" — was
+true of the pre-relaunch line and is now wrong in both directions: Base is on the *same* string as
+optimism and unichain, and `0xEB28D5cA…` is the old copy, not a Base special case. It stays in the
+book as `swapRouterHistoric` rather than only in prose, so something can go red on it.
+
+Note also that optimism carries **both** p3 strings — the new router at `swapRouter` and the v1 one at
+`0x9651cD59…` — so "op is live" is true of the address in the `swapRouter` field and says nothing
+about the other string being safe to route through.
+
+The same two-generation trap sits in `p2`: the new registry is `0x417c41d4…` (6303 B) on base,
+optimism and unichain, the v1 is `0xe9515881…` (4654 B) on the eight old chains, and the v1 string is
+*also* still deployed (superseded, `paused() == true`) on base and optimism — but **not** on unichain.
+And `0x9651cD59…` is additionally the **old Base f1a `requestRegistry`** (2772 B, answering
+`p2Registry() == 0xe9515881…`); the live one is `0xeD395024…` (2904 B, `p2Registry() == 0x417c41d4…`).
+Same bare string, different contract **per chain**. Never key on a bare address without its chain.
+
+Every figure above was read on two RPCs per chain, 2026-11-14.
 
 `requestRegistry` (f1-a), `receiptNft` (g4b), `escrowRail`/`streamRail` on Base, and the five Base
 supporting contracts (`settlementRegistry`, `fleetExecutor`, `x402Facilitator`, `fleetPaymaster`,
 `tollRegistry`) are Base-only or per-chain as listed. The nested **`v2`** block is the next-gen line
-and is **Base-only (chainId 8453)** — the other 9 chains stay on the v1 addresses at each chain's top
-level. A reader must **not** assume v2 is multi-chain.
+and is **Base-only (chainId 8453)**. The other chains stay at each chain's top level — and note that is
+**not** "the other nine stay on v1": base, optimism and unichain all carry the current line at top
+level (`$note_new_line`), so only the eight `v1-paused` blocks do. A reader must **not** assume `v2` is
+multi-chain, and must not assume top level is v1 either.
 
 ### `status`: the eight v1 chains are PAUSED (SDK-1)
 
